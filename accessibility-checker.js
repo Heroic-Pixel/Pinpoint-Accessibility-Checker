@@ -9,7 +9,7 @@
     
             // Main accessibility checker object
         window.uwAccessibilityChecker = {
-            version: '1.6.5', // Current version
+            version: '1.7.0', // Current version
             websiteUrl: 'https://pinpoint.heroicpixel.com/', // Main website URL
             legacyDomainUrl: 'https://althe3rd.github.io/Pinpoint/', // Legacy domain for transition
             issues: [],
@@ -33,6 +33,10 @@
         
         // Initialize the checker
         init: function() {
+            // Stamp a fresh session ID for this panel instance. History
+            // coalescing uses this to tell "click-spam within one session"
+            // (coalesce) apart from "page reload + re-scan" (always append).
+            this.sessionId = Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
             this.setupShadowDOM();
             this.rehydratePickerScopes();
             this.checkForUpdates();
@@ -3630,6 +3634,12 @@
                                 </a>
                             </li>
                             <li>
+                                <a id="uw-a11y-nav-history" href="#uw-a11y-view-history" title="Score history">
+                                    <svg class="feather feather-trending-up" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                                    <span class="uw-a11y-nav-label">History</span>
+                                </a>
+                            </li>
+                            <li>
                                 <a id="uw-a11y-nav-inspector" href="#uw-a11y-view-inspector" title="Inspector Tools">
                                     <svg class="feather feather-search" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                                     <span class="uw-a11y-nav-label">Inspector</span>
@@ -3682,6 +3692,10 @@
                                 <small>Select any issue to highlight the element on the page. Press <kbd>Escape</kbd> to return here from a highlighted element.</small>
                             </p>
                             <div id="uw-a11y-results"></div>
+                        </div>
+
+                        <div id="uw-a11y-view-history" class="uw-a11y-view" hidden>
+                            <div class="uw-a11y-history"></div>
                         </div>
 
                         <div id="uw-a11y-view-inspector" class="uw-a11y-view" hidden>
@@ -4009,6 +4023,7 @@
             this.initNavigation();
             this.renderSettings();
             this.renderHelp();
+            this.renderHistoryView();
             this.applyDockPosition(this.getDockPosition());
 
             // Load GSAP and animate panel
@@ -5218,6 +5233,250 @@
                     border-radius: 12px;
                     border: 1px solid rgba(0,0,0,0.05);
                     box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+                }
+                #uw-a11y-panel .uw-a11y-score-sparkline {
+                    margin-top: 10px;
+                    color: #4f46e5;
+                }
+                #uw-a11y-panel .uw-a11y-spark-link {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    text-decoration: none;
+                    color: inherit;
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    transition: background 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-spark-link:hover,
+                #uw-a11y-panel .uw-a11y-spark-link:focus-visible {
+                    background: rgba(79,70,229,0.08);
+                    outline: none;
+                }
+                #uw-a11y-panel .uw-a11y-spark-svg {
+                    display: block;
+                }
+                #uw-a11y-panel .uw-a11y-spark-meta {
+                    font-size: 11px;
+                    color: #555;
+                    display: inline-flex;
+                    gap: 4px;
+                    align-items: baseline;
+                }
+                #uw-a11y-panel .uw-a11y-spark-delta { font-weight: 600; }
+                #uw-a11y-panel .uw-a11y-spark-count { color: #888; }
+
+                /* History view */
+                #uw-a11y-panel .uw-a11y-history-wrap { padding: 4px 2px 12px; }
+                #uw-a11y-panel .uw-a11y-history-wrap h3 { margin: 0 0 4px; font-size: 16px; }
+                #uw-a11y-panel .uw-a11y-history-wrap h4 { margin: 12px 0 6px; font-size: 13px; color: #444; }
+                #uw-a11y-panel .uw-a11y-history-bucket {
+                    font-size: 11px;
+                    color: #666;
+                    margin: 0 0 14px;
+                }
+                #uw-a11y-panel .uw-a11y-history-bucket code {
+                    background: rgba(0,0,0,0.05);
+                    padding: 1px 5px;
+                    border-radius: 4px;
+                }
+                #uw-a11y-panel .uw-a11y-history-filter-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 8px;
+                    margin: 0 0 10px;
+                    font-size: 11px;
+                    color: #555;
+                    flex-wrap: wrap;
+                }
+                #uw-a11y-panel .uw-a11y-history-filter-label strong { color: #4f46e5; }
+                #uw-a11y-panel .uw-a11y-history-empty-filter {
+                    background: rgba(79,70,229,0.05);
+                    border: 1px dashed rgba(79,70,229,0.3);
+                    border-radius: 8px;
+                    padding: 12px;
+                    margin-bottom: 12px;
+                }
+                #uw-a11y-panel .uw-a11y-history-empty-filter p {
+                    margin: 0;
+                    font-size: 12px;
+                    color: #4f46e5;
+                }
+                #uw-a11y-panel .uw-a11y-history-chart,
+                #uw-a11y-panel .uw-a11y-history-bars {
+                    background: rgba(255,255,255,0.7);
+                    border: 1px solid rgba(0,0,0,0.06);
+                    border-radius: 8px;
+                    padding: 6px 8px;
+                    margin-bottom: 12px;
+                }
+                #uw-a11y-panel .uw-a11y-history-legend {
+                    display: flex;
+                    gap: 14px;
+                    font-size: 11px;
+                    color: #555;
+                    margin-top: 4px;
+                    padding: 0 8px;
+                }
+                #uw-a11y-panel .uw-a11y-history-legend i {
+                    display: inline-block;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 2px;
+                    margin-right: 5px;
+                    vertical-align: middle;
+                }
+                #uw-a11y-panel .uw-a11y-history-deltas {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 6px;
+                    margin: 4px 0 6px;
+                }
+                #uw-a11y-panel .uw-a11y-history-delta {
+                    background: rgba(255,255,255,0.7);
+                    border: 1px solid rgba(0,0,0,0.06);
+                    border-radius: 8px;
+                    padding: 8px 6px;
+                    text-align: center;
+                }
+                #uw-a11y-panel .uw-a11y-history-delta strong {
+                    display: block;
+                    font-size: 20px;
+                    line-height: 1.1;
+                    font-variant-numeric: tabular-nums;
+                    color: #222;
+                }
+                #uw-a11y-panel .uw-a11y-history-delta span {
+                    display: block;
+                    font-size: 10px;
+                    color: #666;
+                    margin-top: 2px;
+                }
+                #uw-a11y-panel .uw-a11y-history-delta-badge {
+                    display: inline-block;
+                    margin-top: 4px;
+                    font-size: 10px;
+                    font-weight: 600;
+                    padding: 1px 6px;
+                    border-radius: 999px;
+                    line-height: 1.4;
+                    background: rgba(0,0,0,0.06);
+                    color: #555;
+                    font-variant-numeric: tabular-nums;
+                }
+                #uw-a11y-panel .uw-a11y-history-delta-badge.is-good {
+                    background: rgba(25,135,84,0.12);
+                    color: #198754;
+                }
+                #uw-a11y-panel .uw-a11y-history-delta-badge.is-bad {
+                    background: rgba(178,34,34,0.12);
+                    color: #b22222;
+                }
+                #uw-a11y-panel .uw-a11y-history-summary-heading {
+                    font-size: 13px;
+                    margin: 14px 0 6px;
+                    color: #444;
+                }
+                #uw-a11y-panel .uw-a11y-history-summary-sub {
+                    font-weight: normal;
+                    color: #888;
+                    font-size: 11px;
+                }
+                #uw-a11y-panel .uw-a11y-history-cfg-warn {
+                    font-size: 11px;
+                    color: #8a6d3b;
+                    background: #fcf8e3;
+                    border: 1px solid #faebcc;
+                    padding: 6px 10px;
+                    border-radius: 6px;
+                    margin: 0 0 12px;
+                }
+                /* Subtle "Looks like a WordPress site" hint pill rendered
+                   between the score dial and the partial-scan banner. */
+                #uw-a11y-panel .uw-a11y-preset-hint {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: rgba(25,135,84,0.07);
+                    border: 1px solid rgba(25,135,84,0.25);
+                    color: #146c43;
+                    font-size: 12px;
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    margin-bottom: 10px;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-icon {
+                    flex-shrink: 0;
+                    color: #198754;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-text {
+                    flex: 1;
+                    line-height: 1.35;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-apply {
+                    flex-shrink: 0;
+                    background: #198754;
+                    color: #fff;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-apply:hover,
+                #uw-a11y-panel .uw-a11y-preset-hint-apply:focus-visible {
+                    background: #146c43;
+                    outline: none;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-dismiss {
+                    flex-shrink: 0;
+                    background: none;
+                    border: none;
+                    color: #146c43;
+                    font-size: 14px;
+                    cursor: pointer;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    line-height: 1;
+                    opacity: 0.7;
+                    transition: opacity 0.15s ease, background 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-dismiss:hover,
+                #uw-a11y-panel .uw-a11y-preset-hint-dismiss:focus-visible {
+                    opacity: 1;
+                    background: rgba(25,135,84,0.12);
+                    outline: none;
+                }
+                #uw-a11y-panel .uw-a11y-history-rules {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 14px;
+                    margin-top: 4px;
+                }
+                #uw-a11y-panel .uw-a11y-history-rules ul {
+                    list-style: none;
+                    padding: 0;
+                    margin: 0;
+                    font-size: 11px;
+                }
+                #uw-a11y-panel .uw-a11y-history-rules li {
+                    margin-bottom: 3px;
+                }
+                #uw-a11y-panel .uw-a11y-history-rules code {
+                    background: rgba(0,0,0,0.05);
+                    padding: 1px 5px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                }
+                #uw-a11y-panel .uw-a11y-history-rule-empty { color: #888; font-style: italic; }
+                #uw-a11y-panel .uw-a11y-history-actions {
+                    display: flex;
+                    gap: 8px;
+                    margin-top: 16px;
+                    flex-wrap: wrap;
                 }
                 #uw-a11y-panel .uw-a11y-score-dial {
                     position: relative;
@@ -7339,6 +7598,7 @@
             
             const map = [
                 { id: 'uw-a11y-nav-results', view: 'results' },
+                { id: 'uw-a11y-nav-history', view: 'history' },
                 { id: 'uw-a11y-nav-inspector', view: 'inspector' },
                 { id: 'uw-a11y-nav-settings', view: 'settings' },
                 { id: 'uw-a11y-nav-help', view: 'help' },
@@ -7362,7 +7622,7 @@
 
         // Show a specific view and update nav state
         showView: function(view) {
-            const views = ['results', 'inspector', 'settings', 'help', 'about'];
+            const views = ['results', 'history', 'inspector', 'settings', 'help', 'about'];
             const currentView = this.currentView;
             
             // Don't do anything if we're already on this view or currently animating
@@ -7381,6 +7641,8 @@
             // Check if animations should be used
             const shouldAnimate = window.gsap && currentView && currentView !== view && !this.prefersReducedMotion();
             
+            if (view === 'history') this.renderHistoryView();
+
             if (shouldAnimate) {
                 this.isAnimating = true;
                 this.animateViewTransition(currentView, view).then(() => {
@@ -7423,7 +7685,7 @@
 
         // Update navigation active state without animation conflicts
         updateNavActiveState: function(activeView) {
-            const views = ['results', 'inspector', 'settings', 'help', 'about'];
+            const views = ['results', 'history', 'inspector', 'settings', 'help', 'about'];
             
             views.forEach(v => {
                 const link = this.shadowRoot.getElementById(`uw-a11y-nav-${v}`);
@@ -7460,11 +7722,15 @@
                 '#uw-a11y-global-styles'
             ];
         },
-        // Default user-adjustable excludes (shown in Settings)
+        // Default user-adjustable excludes (shown in Settings).
+        // Historically included '#wpadminbar' to skip the WordPress admin bar
+        // by default. With platform detection + the WordPress preset that nudge
+        // is now site-aware: WP users get a green "Apply WordPress preset" pill
+        // on detected WP pages, and the preset itself adds the admin-bar
+        // selectors. Keeping `#wpadminbar` as a global default would also
+        // accidentally silence any non-WP page that happened to use that id.
         getDefaultExcludeSelectors: function() {
-            return [
-                '#wpadminbar'
-            ];
+            return [];
         },
 
         getSettingsKey: function() { return 'uw-a11y-settings'; },
@@ -7508,6 +7774,886 @@
             const map = this.getPickerScopeFallbacks();
             map[scopeId] = structuralSelector;
             this.savePickerScopeFallbacks(map);
+        },
+
+        // ── Platform preset registry & per-hostname memory ────────────────
+        // Each preset declares the selectors it ADDS to the user's manual
+        // scope/exclude entries — they're additive, not a replacement. The
+        // user's typed entries are global; preset effects are scoped to the
+        // current hostname via getActivePresetForCurrentHost().
+        getPlatformPresets: function() {
+            // Each preset:
+            //   scope        — selectors layered into Scan Scope unconditionally
+            //                  (active in BOTH "Whole page" and "Just the content" modes)
+            //   exclude      — selectors layered into Exclude unconditionally
+            //   contentScope — additional scope applied ONLY when "Just the content"
+            //                  mode is selected. Lets a content editor on WordPress /
+            //                  Drupal / etc. limit the audit to the page area they
+            //                  actually control.
+            //   hintMode     — which mode the green "Apply" pill should activate
+            //                  when the user accepts the platform-detection nudge.
+            //                  Defaults to 'whole'. Set to 'content' for platforms
+            //                  whose useful contribution is only meaningful in
+            //                  content mode (e.g. LibGuides — see note below).
+            //
+            // LibGuides note: a guide page IS the content already; there's no admin
+            // bar to exclude on the public side. So "Whole page" mode is a no-op
+            // (empty scope, empty exclude) and the only useful application is
+            // "Just the content" → scope to <main>, the actual guide body.
+            return {
+                wordpress:   { label: 'WordPress',   scope: '', exclude: '#wpadminbar, #adminmenuwrap, #adminmenuback, #adminmenumain, #wpfooter', contentScope: 'main, .entry-content, article',  hintMode: 'whole' },
+                drupal:      { label: 'Drupal',      scope: '', exclude: '#toolbar-administration, .toolbar-bar, .toolbar-tray',                  contentScope: 'main, .node__content, .region-content', hintMode: 'whole' },
+                squarespace: { label: 'Squarespace', scope: '', exclude: '.sqs-announcement-bar-dropzone, .sqs-cookie-banner-v2',                 contentScope: 'main, #content',                  hintMode: 'whole' },
+                wix:         { label: 'Wix',         scope: '', exclude: '#WIX_ADS, #SITE_HEADER, .wixAds',                                       contentScope: '#PAGES_CONTAINER, main',          hintMode: 'whole' },
+                shopify:     { label: 'Shopify',     scope: '', exclude: '.shopify-section--announcement-bar, #preview-bar-iframe, #admin-bar-iframe', contentScope: 'main, #MainContent',         hintMode: 'whole' },
+                joomla:      { label: 'Joomla',      scope: '', exclude: '#atum-sidebar, .atum-contract, #subhead-container',                     contentScope: 'main, #content',                  hintMode: 'whole' },
+                webflow:     { label: 'Webflow',     scope: '', exclude: '.w-webflow-badge',                                                      contentScope: 'main',                            hintMode: 'whole' },
+                libguides:   { label: 'LibGuides',   scope: '', exclude: '',                                                                       contentScope: 'main',                            hintMode: 'content' }
+            };
+        },
+
+        getHostPresetsStorageKey: function() { return 'uw-a11y-host-presets'; },
+
+        getCurrentHostname: function() {
+            try { return location.hostname || ''; } catch (_) { return ''; }
+        },
+
+        loadHostPresets: function() {
+            try {
+                const raw = localStorage.getItem(this.getHostPresetsStorageKey());
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (e) {
+                console.warn('[Pinpoint] host-preset load failed:', e && e.message ? e.message : e);
+                return {};
+            }
+        },
+
+        saveHostPresets: function(map) {
+            try {
+                localStorage.setItem(this.getHostPresetsStorageKey(), JSON.stringify(map || {}));
+            } catch (e) {
+                console.warn('[Pinpoint] host-preset save failed:', e && e.message ? e.message : e);
+            }
+        },
+
+        // Per-host record shape: { preset: string, mode: 'whole' | 'content' }.
+        // Legacy strings (just the preset name) are normalized to whole-page
+        // mode. `null` means no preset is configured for the host.
+        getActivePresetEntryForCurrentHost: function() {
+            const map = this.loadHostPresets();
+            const host = this.getCurrentHostname();
+            if (!host) return null;
+            const raw = map[host];
+            if (!raw) return null;
+            const presets = this.getPlatformPresets();
+            // Back-compat: legacy storage stored a bare preset name string.
+            if (typeof raw === 'string') {
+                return presets[raw] ? { preset: raw, mode: 'whole' } : null;
+            }
+            if (raw && typeof raw === 'object' && presets[raw.preset]) {
+                return { preset: raw.preset, mode: raw.mode === 'content' ? 'content' : 'whole' };
+            }
+            return null;
+        },
+
+        getActivePresetForCurrentHost: function() {
+            const e = this.getActivePresetEntryForCurrentHost();
+            return e ? e.preset : null;
+        },
+
+        getActivePresetModeForCurrentHost: function() {
+            const e = this.getActivePresetEntryForCurrentHost();
+            return e ? e.mode : 'whole';
+        },
+
+        setActivePresetForCurrentHost: function(name, mode) {
+            const map = this.loadHostPresets();
+            const host = this.getCurrentHostname();
+            if (!host) return;
+            if (name && this.getPlatformPresets()[name]) {
+                map[host] = { preset: name, mode: mode === 'content' ? 'content' : 'whole' };
+            } else {
+                delete map[host];
+            }
+            this.saveHostPresets(map);
+        },
+
+        // ── Platform detection (results-view hint) ───────────────────────
+        // Best-effort detection of the platform a page is built with, used
+        // only to surface a subtle "Apply <Platform> preset?" hint in the
+        // results view when no preset is currently active for this host.
+        // Detection is conservative: each branch needs a high-confidence
+        // signal (generator meta tag, distinctive global, or unmistakable
+        // DOM marker) so we don't nag people on false positives.
+        detectPlatform: function() {
+            try {
+                const gen = document.querySelector('meta[name="generator"], meta[name="Generator"]');
+                const g = gen ? (gen.getAttribute('content') || '').toLowerCase() : '';
+
+                // Generator meta — most authoritative signal.
+                if (g.startsWith('wordpress'))   return 'wordpress';
+                if (g.startsWith('drupal'))      return 'drupal';
+                if (g.startsWith('squarespace')) return 'squarespace';
+                if (g.startsWith('wix'))         return 'wix';
+                if (g.startsWith('shopify'))     return 'shopify';
+                if (g.startsWith('joomla'))      return 'joomla';
+                if (g.startsWith('webflow'))     return 'webflow';
+                if (g.includes('libguides') || g.includes('springshare')) return 'libguides';
+
+                // DOM / runtime fallbacks. Each requires either a unique
+                // identifier or a multi-signal combo to fire.
+                if (document.getElementById('wpadminbar')) return 'wordpress';
+                if (document.querySelector('link[href*="/wp-content/"], script[src*="/wp-content/"], script[src*="/wp-includes/"]')) return 'wordpress';
+
+                if (document.getElementById('toolbar-administration')) return 'drupal';
+                if (window.Drupal && window.Drupal.behaviors) return 'drupal';
+                if (document.querySelector('script[src*="/sites/default/files/"], script[src*="/core/misc/drupal"]')) return 'drupal';
+
+                if (window.Shopify && (window.Shopify.shop || window.Shopify.theme)) return 'shopify';
+                if (document.querySelector('script[src*="cdn.shopify.com"], link[href*="cdn.shopify.com"]')) return 'shopify';
+
+                if (document.querySelector('script[src*="static.parastorage.com"], script[src*=".wixstatic.com"]')) return 'wix';
+
+                if (document.querySelector('script[src*="static.squarespace.com"], script[src*="squarespace-cdn.com"]')) return 'squarespace';
+
+                if (document.querySelector('[data-wf-page], html.w-mod-js, script[src*="webflow.com"]')) return 'webflow';
+
+                if (document.querySelector('script[src*="libapps.com"], script[src*="libguides.com"], [class^="s-lg-"], [class*=" s-lg-"], [class^="s-lib-public"], [class*=" s-lib-public"]')) return 'libguides';
+
+                if (window.Joomla || document.querySelector('script[src*="/media/system/js/"], link[href*="/media/system/css/"]')) return 'joomla';
+            } catch (_) { /* DOM access errors — return null below */ }
+            return null;
+        },
+
+        getPresetHintDismissalsKey: function() { return 'uw-a11y-preset-hint-dismissals'; },
+
+        loadPresetHintDismissals: function() {
+            try {
+                const raw = localStorage.getItem(this.getPresetHintDismissalsKey());
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (_) { return {}; }
+        },
+
+        savePresetHintDismissals: function(map) {
+            try { localStorage.setItem(this.getPresetHintDismissalsKey(), JSON.stringify(map || {})); } catch (_) {}
+        },
+
+        // Per-hostname dismissal: once a user dismisses the WordPress hint
+        // on example.com, we don't surface it again on example.com. They
+        // can still pick the preset manually in Settings.
+        isPresetHintDismissed: function(presetKey) {
+            const host = this.getCurrentHostname();
+            if (!host || !presetKey) return false;
+            const map = this.loadPresetHintDismissals();
+            const entry = map[host];
+            if (!entry) return false;
+            // Dismissals stored as { hostname: ['wordpress', 'drupal'] } so
+            // a wrong-detection dismissal on one platform doesn't suppress
+            // the hint forever if detection ever swings to a different one.
+            return Array.isArray(entry) ? entry.includes(presetKey) : entry === presetKey;
+        },
+
+        markPresetHintDismissed: function(presetKey) {
+            const host = this.getCurrentHostname();
+            if (!host || !presetKey) return;
+            const map = this.loadPresetHintDismissals();
+            const existing = map[host];
+            const arr = Array.isArray(existing) ? existing.slice() : (existing ? [existing] : []);
+            if (!arr.includes(presetKey)) arr.push(presetKey);
+            map[host] = arr;
+            this.savePresetHintDismissals(map);
+        },
+
+        // Should the results-view "Apply <Platform> preset?" hint render?
+        // Returns the preset key to suggest, or null when nothing should
+        // surface (no detection, preset already active, or user dismissed).
+        getResultsPresetHintKey: function() {
+            // Active preset → no nudge needed.
+            if (this.getActivePresetForCurrentHost()) return null;
+            const detected = this.detectPlatform();
+            if (!detected) return null;
+            if (!this.getPlatformPresets()[detected]) return null;
+            if (this.isPresetHintDismissed(detected)) return null;
+            return detected;
+        },
+
+        // Returns the parsed selectors contributed by the active preset for
+        // the current hostname, factoring in the chosen Scan Mode. Returns
+        // empty arrays when no preset is set.
+        getActivePresetSelectors: function() {
+            const entry = this.getActivePresetEntryForCurrentHost();
+            if (!entry) return { scope: [], exclude: [] };
+            const preset = this.getPlatformPresets()[entry.preset];
+            const split = (s) => (s || '').split(',').map(v => v.trim()).filter(Boolean);
+            const scope = split(preset.scope);
+            if (entry.mode === 'content') {
+                split(preset.contentScope).forEach(s => { if (!scope.includes(s)) scope.push(s); });
+            }
+            return { scope, exclude: split(preset.exclude) };
+        },
+
+        // ── Score history ─────────────────────────────────────────────────
+        // Per-origin localStorage map: { "<pathname>": [ entry, entry, ... ] }
+        // Each entry: { ts, score, counts: { errors, warnings, info, dismissed,
+        // verified }, ruleIds: { errors:[], warnings:[], info:[] }, cfg: {
+        // wcagSpec, wcagLevel, scoped } }. Capped to 100 entries per URL with
+        // LRU eviction; identical adjacent scans within 5 minutes are coalesced
+        // (last entry's `ts` updated) so re-running the same scan doesn't pad
+        // the chart with duplicate points.
+        getHistoryStorageKey: function() { return 'uw-a11y-history'; },
+        getHistoryMaxEntries: function() { return 100; },
+
+        // History tracking is opt-out — default on, controlled by settings.
+        isHistoryTrackingEnabled: function() {
+            const s = this.loadSettings();
+            return s.trackHistory !== false;
+        },
+
+        setHistoryTrackingEnabled: function(enabled) {
+            const s = this.loadSettings();
+            s.trackHistory = !!enabled;
+            this.saveSettings(s);
+        },
+
+        getCurrentHistoryBucketKey: function() {
+            try {
+                // Bucket by pathname (no query, no hash) — see CLAUDE notes.
+                let path = location.pathname || '/';
+                if (!path.startsWith('/')) path = '/' + path;
+                return path;
+            } catch (_) { return '/'; }
+        },
+
+        loadHistoryAll: function() {
+            try {
+                const raw = localStorage.getItem(this.getHistoryStorageKey());
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (e) {
+                console.warn('[Pinpoint] history load failed:', e && e.message ? e.message : e);
+                return {};
+            }
+        },
+
+        saveHistoryAll: function(map) {
+            try {
+                localStorage.setItem(this.getHistoryStorageKey(), JSON.stringify(map || {}));
+            } catch (e) {
+                console.warn('[Pinpoint] history save failed (will attempt trim):', e && e.message ? e.message : e);
+                // Quota exceeded — try a reduce-and-retry to keep newer entries.
+                try {
+                    const trimmed = {};
+                    Object.keys(map || {}).forEach(k => {
+                        const arr = Array.isArray(map[k]) ? map[k] : [];
+                        trimmed[k] = arr.slice(-Math.max(10, Math.floor(this.getHistoryMaxEntries() / 4)));
+                    });
+                    localStorage.setItem(this.getHistoryStorageKey(), JSON.stringify(trimmed));
+                } catch (e2) {
+                    console.warn('[Pinpoint] history save failed even after trim — localStorage may be unavailable:', e2 && e2.message ? e2.message : e2);
+                }
+            }
+        },
+
+        // Console diagnostic for the bookmarklet vs. extension vs. test-page
+        // mystery: dumps the storage state, what the checker thinks the
+        // bucket key is, and a sample of recorded entries. Call from DevTools
+        // as `uwAccessibilityChecker.historyDebug()`.
+        historyDebug: function() {
+            const out = {
+                version: this.version,
+                origin: location.origin,
+                href: location.href,
+                bucketKey: this.getCurrentHistoryBucketKey(),
+                trackingEnabled: this.isHistoryTrackingEnabled(),
+                localStorageAvailable: false,
+                rawValue: null,
+                parsed: null,
+                forCurrentUrl: [],
+                allKeysOnOrigin: []
+            };
+            try {
+                const probeKey = '__pinpoint_probe__';
+                localStorage.setItem(probeKey, '1');
+                localStorage.removeItem(probeKey);
+                out.localStorageAvailable = true;
+                out.rawValue = localStorage.getItem(this.getHistoryStorageKey());
+                out.allKeysOnOrigin = Object.keys(localStorage).filter(k => k.startsWith('uw-a11y-'));
+            } catch (e) {
+                out.localStorageError = e && e.message ? e.message : String(e);
+            }
+            try { out.parsed = out.rawValue ? JSON.parse(out.rawValue) : null; } catch (_) {}
+            try { out.forCurrentUrl = this.getHistoryForCurrentUrl(); } catch (_) {}
+            console.log('%c[Pinpoint] history diagnostic', 'color:#4f46e5;font-weight:bold');
+            console.table({
+                version: out.version,
+                origin: out.origin,
+                bucketKey: out.bucketKey,
+                trackingEnabled: out.trackingEnabled,
+                localStorageAvailable: out.localStorageAvailable,
+                rawSizeBytes: out.rawValue ? out.rawValue.length : 0,
+                bucketsStored: out.parsed ? Object.keys(out.parsed).length : 0,
+                entriesForThisUrl: out.forCurrentUrl.length
+            });
+            console.log('Pinpoint keys on this origin:', out.allKeysOnOrigin);
+            console.log('Full history map:', out.parsed);
+            console.log('Entries for current URL:', out.forCurrentUrl);
+            return out;
+        },
+
+        getHistoryForCurrentUrl: function() {
+            const all = this.loadHistoryAll();
+            const key = this.getCurrentHistoryBucketKey();
+            return Array.isArray(all[key]) ? all[key] : [];
+        },
+
+        // Hash a config so we know whether two scans are comparable. Two
+        // scans are only comparable when ALL of these match: WCAG version,
+        // conformance level, whether scope is set, the platform preset, and
+        // the scan mode (whole page / just content). Without preset+mode
+        // here, WordPress whole-page and WordPress content-only would be
+        // treated as the same kind of scan and produce misleading chart
+        // swings when the user flips between them.
+        cfgFingerprint: function(cfg) {
+            if (!cfg) return '';
+            return [
+                cfg.wcagSpec || '',
+                cfg.wcagLevel || '',
+                cfg.scoped ? 's' : 'f',
+                cfg.preset || '',
+                cfg.mode || 'whole'
+            ].join('|');
+        },
+
+        // Snapshot of the scan settings at the moment a scan runs. Used both
+        // as the entry.cfg recorded into history AND as the current-cfg
+        // baseline that filters the History view's chart to comparable
+        // scans. Centralized here so the two paths can't drift.
+        getCurrentScanCfg: function() {
+            const wcag = this.getSelectedWcag ? this.getSelectedWcag() : { wcagSpec: '2.1', wcagLevel: 'AA' };
+            return {
+                wcagSpec: wcag.wcagSpec,
+                wcagLevel: wcag.wcagLevel,
+                scoped: this.getEffectiveIncludeSelectors().length > 0,
+                preset: this.getActivePresetForCurrentHost() || '',
+                mode: this.getActivePresetModeForCurrentHost() || 'whole'
+            };
+        },
+
+        countsFingerprint: function(c) {
+            if (!c) return '';
+            return [c.errors|0, c.warnings|0, c.info|0, c.dismissed|0, c.verified|0].join(',');
+        },
+
+        // Record a scan's outcome for the current URL. Caller passes the score
+        // object, the issue counts, the rule IDs that fired (split by severity),
+        // and the cfg the scan ran under. Coalescing logic keeps repeated
+        // identical re-scans from inflating the dataset.
+        recordScanInHistory: function(score, counts, ruleIds, cfg) {
+            if (!this.isHistoryTrackingEnabled()) return;
+            if (typeof score !== 'number') return;
+
+            const all = this.loadHistoryAll();
+            const key = this.getCurrentHistoryBucketKey();
+            const arr = Array.isArray(all[key]) ? all[key] : [];
+            const now = Date.now();
+
+            const entry = {
+                ts: now,
+                sessionId: this.sessionId || null,
+                score: Math.round(score),
+                counts: {
+                    errors: (counts && counts.errors) | 0,
+                    warnings: (counts && counts.warnings) | 0,
+                    info: (counts && counts.info) | 0,
+                    dismissed: (counts && counts.dismissed) | 0,
+                    verified: (counts && counts.verified) | 0
+                },
+                ruleIds: {
+                    errors: Array.isArray(ruleIds && ruleIds.errors) ? ruleIds.errors.slice(0, 50) : [],
+                    warnings: Array.isArray(ruleIds && ruleIds.warnings) ? ruleIds.warnings.slice(0, 50) : [],
+                    info: Array.isArray(ruleIds && ruleIds.info) ? ruleIds.info.slice(0, 50) : []
+                },
+                cfg: {
+                    wcagSpec: (cfg && cfg.wcagSpec) || '2.1',
+                    wcagLevel: (cfg && cfg.wcagLevel) || 'AA',
+                    scoped: !!(cfg && cfg.scoped),
+                    preset: (cfg && cfg.preset) || '',
+                    mode: (cfg && cfg.mode) || 'whole'
+                }
+            };
+
+            // Only coalesce within the SAME panel session — i.e. the user
+            // re-scanned without reloading (e.g. via Save and Re-scan). A
+            // fresh page load + bookmarklet click always gets a new
+            // sessionId, so it always appends a new entry, even if the
+            // results are identical to the previous run. This avoids the
+            // "I scanned 5 times and only see 2 entries" trap caused by
+            // time-window coalescing across reloads.
+            const last = arr.length > 0 ? arr[arr.length - 1] : null;
+            const sameSession = last && last.sessionId && entry.sessionId
+                && last.sessionId === entry.sessionId;
+            const sameCfg = last && this.cfgFingerprint(last.cfg) === this.cfgFingerprint(entry.cfg);
+            const sameScore = last && last.score === entry.score;
+            const sameCounts = last && this.countsFingerprint(last.counts) === this.countsFingerprint(entry.counts);
+
+            if (sameSession && sameCfg && sameScore && sameCounts) {
+                // Coalesce — same panel instance produced an identical re-run.
+                last.ts = now;
+            } else {
+                arr.push(entry);
+                // Cap to last N
+                const max = this.getHistoryMaxEntries();
+                if (arr.length > max) arr.splice(0, arr.length - max);
+            }
+
+            all[key] = arr;
+            this.saveHistoryAll(all);
+            // Refresh sparkline if it's mounted (results view visible)
+            this.renderScoreHistorySparkline();
+        },
+
+        clearHistoryForCurrentUrl: function() {
+            const all = this.loadHistoryAll();
+            const key = this.getCurrentHistoryBucketKey();
+            delete all[key];
+            this.saveHistoryAll(all);
+            this.renderHistoryView();
+            this.renderScoreHistorySparkline();
+        },
+
+        clearAllHistory: function() {
+            try { localStorage.removeItem(this.getHistoryStorageKey()); } catch (_) {}
+            this.renderHistoryView();
+            this.renderScoreHistorySparkline();
+        },
+
+        // Build the rule-id triple from the current `this.issues` array. Used
+        // by the recording hook so the history can later show which rules
+        // were introduced or resolved between scans.
+        collectRuleIdsForHistory: function() {
+            const out = { errors: new Set(), warnings: new Set(), info: new Set() };
+            (this.issues || []).forEach(i => {
+                if (!i || !i.ruleId) return;
+                if (i.type === 'error') out.errors.add(i.ruleId);
+                else if (i.type === 'warning') out.warnings.add(i.ruleId);
+                else if (i.type === 'info') out.info.add(i.ruleId);
+            });
+            return {
+                errors: [...out.errors],
+                warnings: [...out.warnings],
+                info: [...out.info]
+            };
+        },
+
+        // Build the SVG path string for a score-over-time line. `entries` are
+        // sorted oldest→newest. `width`/`height` are the inner drawing area;
+        // padding leaves room for marker dots without clipping.
+        buildHistoryLinePath: function(entries, width, height, pad) {
+            if (!entries || entries.length === 0) return '';
+            const padding = pad == null ? 4 : pad;
+            const w = Math.max(10, width - padding * 2);
+            const h = Math.max(10, height - padding * 2);
+            const n = entries.length;
+            const pts = entries.map((e, i) => {
+                const x = padding + (n === 1 ? w / 2 : (i / (n - 1)) * w);
+                const y = padding + (1 - (Math.max(0, Math.min(100, e.score)) / 100)) * h;
+                return [x, y];
+            });
+            return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
+        },
+
+        // Compact sparkline beneath the score dial. ~140px wide. Hidden when
+        // there are fewer than 2 entries (one dot wouldn't trend anything).
+        // Only shows entries that match the current scan cfg, so flipping
+        // (e.g.) WordPress whole-page ↔ just-the-content doesn't make the
+        // line jump for reasons unrelated to the page changing.
+        renderScoreHistorySparkline: function() {
+            const host = this.shadowRoot && this.shadowRoot.getElementById('uw-a11y-score-sparkline');
+            if (!host) return;
+            const all = this.getHistoryForCurrentUrl();
+            const fp = this.cfgFingerprint(this.getCurrentScanCfg());
+            const entries = all.filter(e => this.cfgFingerprint(e.cfg) === fp);
+            if (entries.length < 2) {
+                host.innerHTML = '';
+                host.style.display = 'none';
+                return;
+            }
+
+            const recent = entries.slice(-20); // latest 20 scans (current cfg only)
+            const w = 140, h = 32, pad = 3;
+            const path = this.buildHistoryLinePath(recent, w, h, pad);
+            const last = recent[recent.length - 1];
+            const prev = recent[recent.length - 2];
+            const delta = last.score - prev.score;
+            const deltaSign = delta > 0 ? '+' : '';
+            const deltaColor = delta > 0 ? '#198754' : delta < 0 ? '#b22222' : '#666';
+
+            // Endpoint dot for emphasis
+            const lastX = pad + ((recent.length - 1) / Math.max(1, recent.length - 1)) * (w - pad * 2);
+            const lastY = pad + (1 - (last.score / 100)) * (h - pad * 2);
+
+            host.style.display = '';
+            host.innerHTML = `
+                <a href="#uw-a11y-view-history" class="uw-a11y-spark-link" aria-label="Open score history (${recent.length} scans)">
+                    <svg class="uw-a11y-spark-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">
+                        <path d="${path}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+                        <circle cx="${lastX.toFixed(2)}" cy="${lastY.toFixed(2)}" r="2.5" fill="currentColor"/>
+                    </svg>
+                    <span class="uw-a11y-spark-meta">
+                        <span class="uw-a11y-spark-delta" style="color:${deltaColor}">${deltaSign}${delta} vs. last</span>
+                        <span class="uw-a11y-spark-count">· ${recent.length} scan${recent.length === 1 ? '' : 's'}</span>
+                    </span>
+                </a>
+            `;
+            const link = host.querySelector('.uw-a11y-spark-link');
+            if (link) {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.showView('history');
+                });
+            }
+        },
+
+        // ── History view ──────────────────────────────────────────────────
+        // Full view: line chart, stacked bar of issue counts over time, deltas
+        // vs. previous scan, and lists of rules introduced/resolved.
+        renderHistoryView: function() {
+            const wrap = this.shadowRoot && this.shadowRoot.getElementById('uw-a11y-view-history');
+            if (!wrap) return;
+            const inner = wrap.querySelector('.uw-a11y-history') || wrap;
+
+            const enabled = this.isHistoryTrackingEnabled();
+            const bucketKey = this.getCurrentHistoryBucketKey();
+            const entries = this.getHistoryForCurrentUrl();
+            const allCount = Object.values(this.loadHistoryAll())
+                .reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+
+            // Empty / disabled states
+            if (!enabled) {
+                inner.innerHTML = `
+                    <div class="uw-a11y-history-wrap">
+                        <h3>Score history</h3>
+                        <p class="uw-a11y-helptext">History tracking is currently <strong>disabled</strong>. Enable it in <a href="#" class="uw-a11y-link-btn" data-go-settings>Settings → History</a> to start recording scans for this URL.</p>
+                    </div>
+                `;
+                const goLink = inner.querySelector('[data-go-settings]');
+                if (goLink) goLink.addEventListener('click', (e) => { e.preventDefault(); this.showView('settings'); });
+                return;
+            }
+
+            if (entries.length === 0) {
+                inner.innerHTML = `
+                    <div class="uw-a11y-history-wrap">
+                        <h3>Score history</h3>
+                        <p class="uw-a11y-helptext">No scans recorded yet for this URL (<code>${this.escapeHtmlContent(bucketKey)}</code>). Run a scan and the result will be saved here so you can compare it with future runs.</p>
+                        ${allCount > 0 ? `<p class="uw-a11y-helptext">${allCount} scan${allCount === 1 ? '' : 's'} are recorded for other paths on this site.</p>` : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            const fmtDate = (ts) => {
+                try {
+                    const d = new Date(ts);
+                    const today = new Date();
+                    const sameDay = d.toDateString() === today.toDateString();
+                    return sameDay
+                        ? `Today ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                        : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                } catch (_) { return ''; }
+            };
+
+            // Filter to entries that match the CURRENT scan settings by
+            // default — flipping WordPress whole-page ↔ just-the-content (or
+            // changing WCAG level) shouldn't make the chart appear to
+            // fluctuate. The user can toggle to "show all" via the chevron
+            // button to see every recorded scan with hollow dots marking the
+            // ones that used a different cfg.
+            const currentFp = this.cfgFingerprint(this.getCurrentScanCfg());
+            const showAll = !!this.historyShowAll;
+            const filtered = showAll ? entries : entries.filter(e => this.cfgFingerprint(e.cfg) === currentFp);
+            const hiddenCount = entries.length - filtered.length;
+
+            // Use the most recent same-cfg entry as "last", and the one
+            // before it as "prev", so deltas are apples-to-apples even when
+            // the absolute most-recent entry was recorded under a different
+            // cfg (e.g. user just flipped to a new mode for the first time).
+            const compareEntries = showAll ? entries : filtered;
+            const last = compareEntries.length > 0 ? compareEntries[compareEntries.length - 1]
+                : entries[entries.length - 1];
+            const prev = compareEntries.length >= 2 ? compareEntries[compareEntries.length - 2] : null;
+
+            // Empty-after-filter state: there are entries on disk but none
+            // of them used the current cfg. Show numbers from the most
+            // recent entry (already assigned to `last`) but skip the chart.
+            const filteredEmpty = !showAll && filtered.length === 0;
+
+            // Chart geometry
+            const cw = 420, ch = 140, pad = 18;
+            const chartEntries = filtered.slice(-30); // last 30 (filtered)
+            const linePath = this.buildHistoryLinePath(chartEntries, cw, ch, pad);
+            const innerW = cw - pad * 2;
+            const innerH = ch - pad * 2;
+            // Y axis labels (0 / 50 / 100)
+            const yLabels = [100, 75, 50, 25, 0].map(v => {
+                const y = pad + (1 - v / 100) * innerH;
+                return `<line x1="${pad}" x2="${cw - pad}" y1="${y}" y2="${y}" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+                        <text x="${pad - 4}" y="${y + 3}" text-anchor="end" font-size="9" fill="#888">${v}</text>`;
+            }).join('');
+            // Cfg label for tooltip — describes the scan settings on the dot.
+            const cfgLabelFor = (cfg) => {
+                if (!cfg) return '';
+                const parts = [`${cfg.wcagSpec || ''} ${cfg.wcagLevel || ''}`.trim()];
+                if (cfg.preset) {
+                    const presets = this.getPlatformPresets();
+                    const lbl = presets[cfg.preset] ? presets[cfg.preset].label : cfg.preset;
+                    parts.push(`${lbl}${cfg.mode === 'content' ? ' · just the content' : ''}`);
+                } else if (cfg.scoped) {
+                    parts.push('scoped');
+                }
+                return parts.filter(Boolean).join(' · ');
+            };
+            // Dots — filled when cfg matches the current settings; hollow
+            // when it doesn't (only relevant in "show all" mode since the
+            // filtered view excludes mismatches entirely).
+            const dots = chartEntries.map((e, i) => {
+                const x = pad + (chartEntries.length === 1 ? innerW / 2 : (i / (chartEntries.length - 1)) * innerW);
+                const y = pad + (1 - (Math.max(0, Math.min(100, e.score)) / 100)) * innerH;
+                const sameCfg = this.cfgFingerprint(e.cfg) === currentFp;
+                const fill = sameCfg ? 'currentColor' : '#fff';
+                const stroke = sameCfg ? 'none' : 'currentColor';
+                return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="3" fill="${fill}" stroke="${stroke}" stroke-width="1.5"><title>${this.escapeHtmlAttribute(fmtDate(e.ts))} · score ${e.score} · ${cfgLabelFor(e.cfg)}</title></circle>`;
+            }).join('');
+
+            // Stacked bar of error/warning/info counts, normalized so a busy
+            // scan doesn't wash out a quieter one — bars are scaled to the
+            // worst (largest sum) scan in this window.
+            const maxSum = Math.max(1, ...chartEntries.map(e => (e.counts.errors|0) + (e.counts.warnings|0) + (e.counts.info|0)));
+            const barW = Math.max(4, Math.min(14, Math.floor(innerW / chartEntries.length) - 2));
+            const bars = chartEntries.map((e, i) => {
+                const x = pad + (chartEntries.length === 1 ? innerW / 2 - barW / 2 : (i / (chartEntries.length - 1)) * innerW - barW / 2);
+                const total = (e.counts.errors|0) + (e.counts.warnings|0) + (e.counts.info|0);
+                const totalH = (total / maxSum) * 60;
+                let yCursor = 80 - totalH; // baseline at y=80, bars grow upward
+                const errH = (e.counts.errors / maxSum) * 60;
+                const warnH = (e.counts.warnings / maxSum) * 60;
+                const infoH = (e.counts.info / maxSum) * 60;
+                let segs = '';
+                if (errH > 0)  { segs += `<rect x="${x.toFixed(2)}" y="${yCursor.toFixed(2)}" width="${barW}" height="${errH.toFixed(2)}" fill="#dc3545"/>`; yCursor += errH; }
+                if (warnH > 0) { segs += `<rect x="${x.toFixed(2)}" y="${yCursor.toFixed(2)}" width="${barW}" height="${warnH.toFixed(2)}" fill="#f0ad4e"/>`; yCursor += warnH; }
+                if (infoH > 0) { segs += `<rect x="${x.toFixed(2)}" y="${yCursor.toFixed(2)}" width="${barW}" height="${infoH.toFixed(2)}" fill="#0d6efd"/>`; }
+                return `<g><title>${this.escapeHtmlAttribute(fmtDate(e.ts))} · ${e.counts.errors|0} err / ${e.counts.warnings|0} review / ${e.counts.info|0} info</title>${segs}</g>`;
+            }).join('');
+
+            // Latest-scan summary cards. Each card shows the CURRENT value
+            // (large) and, when a prior scan exists, the change vs. that
+            // prior scan as a small coloured badge. Skipped entirely when
+            // there's no `last` to read from (filtered-empty case).
+            const currScore = last ? (last.score | 0) : 0;
+            const currErr   = last ? (last.counts.errors | 0) : 0;
+            const currWarn  = last ? (last.counts.warnings | 0) : 0;
+            const currInfo  = last ? (last.counts.info | 0) : 0;
+
+            const deltaBadge = (curr, prevVal, goodWhenNegative) => {
+                if (prev == null) return '';
+                if (typeof prevVal !== 'number') return '';
+                const d = curr - prevVal;
+                let cls = 'is-flat';
+                let label = 'no change';
+                if (d !== 0) {
+                    const isGood = goodWhenNegative ? d < 0 : d > 0;
+                    cls = isGood ? 'is-good' : 'is-bad';
+                    label = (d > 0 ? '+' : '') + d;
+                }
+                return `<span class="uw-a11y-history-delta-badge ${cls}">${this.escapeHtmlContent(label)}</span>`;
+            };
+
+            // Cfg-mismatch warnings:
+            //   • In show-all mode: warn when the most recent two entries
+            //     used different settings (the original behavior).
+            //   • In filtered mode: warn when the absolute-most-recent entry
+            //     uses a different cfg than what's filtered to (i.e. the
+            //     user just changed settings and the latest scan hasn't
+            //     run yet under the new cfg).
+            let cfgWarn = '';
+            const absoluteLast = entries[entries.length - 1];
+            if (showAll && prev && this.cfgFingerprint(last.cfg) !== this.cfgFingerprint(prev.cfg)) {
+                cfgWarn = `<p class="uw-a11y-history-cfg-warn">⚠ Last two scans used different settings — comparison may be misleading.</p>`;
+            } else if (!showAll && absoluteLast && this.cfgFingerprint(absoluteLast.cfg) !== currentFp) {
+                cfgWarn = `<p class="uw-a11y-history-cfg-warn">⚠ The most recent scan used different settings than the current ones. Re-run a scan to add a comparable point.</p>`;
+            }
+
+            const summaryHeading = prev
+                ? `<h4 class="uw-a11y-history-summary-heading">Latest scan <span class="uw-a11y-history-summary-sub">vs. previous</span></h4>`
+                : `<h4 class="uw-a11y-history-summary-heading">Latest scan</h4>`;
+
+            const deltaHtml = (filteredEmpty || !last) ? '' : `
+                ${summaryHeading}
+                <div class="uw-a11y-history-deltas" role="group" aria-label="Latest scan summary${prev ? ' with change since previous scan' : ''}">
+                    <div class="uw-a11y-history-delta">
+                        <strong>${currScore}</strong>
+                        <span>score</span>
+                        ${deltaBadge(currScore, prev && prev.score, false)}
+                    </div>
+                    <div class="uw-a11y-history-delta">
+                        <strong>${currErr}</strong>
+                        <span>violations</span>
+                        ${deltaBadge(currErr, prev && (prev.counts.errors|0), true)}
+                    </div>
+                    <div class="uw-a11y-history-delta">
+                        <strong>${currWarn}</strong>
+                        <span>manual review</span>
+                        ${deltaBadge(currWarn, prev && (prev.counts.warnings|0), true)}
+                    </div>
+                    <div class="uw-a11y-history-delta">
+                        <strong>${currInfo}</strong>
+                        <span>best practices</span>
+                        ${deltaBadge(currInfo, prev && (prev.counts.info|0), true)}
+                    </div>
+                </div>
+                ${cfgWarn}
+            `;
+
+            // Rules introduced / resolved between last two same-cfg scans
+            let rulesHtml = '';
+            if (last && prev) {
+                const lastAll = new Set([...(last.ruleIds.errors||[]), ...(last.ruleIds.warnings||[]), ...(last.ruleIds.info||[])]);
+                const prevAll = new Set([...(prev.ruleIds.errors||[]), ...(prev.ruleIds.warnings||[]), ...(prev.ruleIds.info||[])]);
+                const introduced = [...lastAll].filter(r => !prevAll.has(r));
+                const resolved = [...prevAll].filter(r => !lastAll.has(r));
+                const ruleLine = (arr, kind) => arr.length === 0
+                    ? `<li class="uw-a11y-history-rule-empty">None</li>`
+                    : arr.slice(0, 12).map(r => `<li><code>${this.escapeHtmlContent(r)}</code></li>`).join('') +
+                      (arr.length > 12 ? `<li class="uw-a11y-history-rule-empty">…and ${arr.length - 12} more</li>` : '');
+                rulesHtml = `
+                    <div class="uw-a11y-history-rules">
+                        <div>
+                            <h4>Newly introduced</h4>
+                            <ul>${ruleLine(introduced, 'new')}</ul>
+                        </div>
+                        <div>
+                            <h4>Resolved since last scan</h4>
+                            <ul>${ruleLine(resolved, 'gone')}</ul>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Describe the active filter for the bucket header.
+            const presetEntry = this.getActivePresetEntryForCurrentHost();
+            const presets = this.getPlatformPresets();
+            const filterDesc = (() => {
+                if (showAll) return 'All scan settings';
+                const wcag = this.getSelectedWcag ? this.getSelectedWcag() : { wcagSpec: '2.1', wcagLevel: 'AA' };
+                const parts = [`${wcag.wcagSpec || ''} ${wcag.wcagLevel || ''}`.trim()];
+                if (presetEntry) {
+                    const lbl = presets[presetEntry.preset] ? presets[presetEntry.preset].label : presetEntry.preset;
+                    parts.push(`${lbl}${presetEntry.mode === 'content' ? ' · just the content' : ''}`);
+                } else if (this.getEffectiveIncludeSelectors().length > 0) {
+                    parts.push('scoped');
+                }
+                return parts.filter(Boolean).join(' · ');
+            })();
+
+            const filteredEmptyMsg = filteredEmpty ? `
+                <div class="uw-a11y-history-empty-filter">
+                    <p>No prior scans recorded under the current settings (<strong>${this.escapeHtmlContent(filterDesc)}</strong>) for this URL. Re-run a scan and it will appear here, or switch to <strong>Show all scans</strong> below to view scans recorded under different settings.</p>
+                </div>
+            ` : '';
+
+            const chartBlocks = filteredEmpty ? '' : `
+                <div class="uw-a11y-history-chart" role="img" aria-label="Accessibility score over the last ${chartEntries.length} scans">
+                    <svg viewBox="0 0 ${cw} ${ch}" width="100%" height="${ch}" preserveAspectRatio="none" style="color:#4f46e5;">
+                        ${yLabels}
+                        <path d="${linePath}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+                        ${dots}
+                    </svg>
+                </div>
+
+                <div class="uw-a11y-history-bars" role="img" aria-label="Issue counts (errors, manual review, best practices) over time">
+                    <svg viewBox="0 0 ${cw} 90" width="100%" height="90" preserveAspectRatio="none">
+                        <line x1="${pad}" x2="${cw - pad}" y1="80" y2="80" stroke="rgba(0,0,0,0.15)" stroke-width="1"/>
+                        ${bars}
+                    </svg>
+                    <div class="uw-a11y-history-legend">
+                        <span><i style="background:#dc3545"></i>Violations</span>
+                        <span><i style="background:#f0ad4e"></i>Manual review</span>
+                        <span><i style="background:#0d6efd"></i>Best practices</span>
+                    </div>
+                </div>
+            `;
+
+            inner.innerHTML = `
+                <div class="uw-a11y-history-wrap">
+                    <h3>Score history</h3>
+                    <p class="uw-a11y-history-bucket">
+                        Tracking <code>${this.escapeHtmlContent(bucketKey)}</code> ·
+                        ${showAll
+                            ? `${entries.length} total scan${entries.length === 1 ? '' : 's'}`
+                            : `${filtered.length}/${entries.length} scan${entries.length === 1 ? '' : 's'} match current settings`}
+                        ${last ? ` · latest ${fmtDate(last.ts)}` : ''}
+                    </p>
+                    <div class="uw-a11y-history-filter-row">
+                        <span class="uw-a11y-history-filter-label">${showAll ? 'Showing: <strong>all scan settings</strong>' : `Showing: <strong>${this.escapeHtmlContent(filterDesc)}</strong>`}</span>
+                        ${(hiddenCount > 0 || showAll)
+                            ? `<button type="button" class="uw-a11y-link-btn" id="uw-a11y-history-toggle-show">${showAll ? `Show only current settings` : `Show all scans (${hiddenCount} hidden)`}</button>`
+                            : ''}
+                    </div>
+
+                    ${filteredEmptyMsg}
+                    ${chartBlocks}
+
+                    ${deltaHtml}
+                    ${rulesHtml}
+
+                    <div class="uw-a11y-history-actions">
+                        <button type="button" class="uw-a11y-btn uw-a11y-btn-secondary" id="uw-a11y-history-clear-url">Clear history for this URL</button>
+                        <button type="button" class="uw-a11y-btn uw-a11y-btn-secondary" id="uw-a11y-history-clear-all">Clear all history</button>
+                    </div>
+                    <p class="uw-a11y-helptext">History is stored locally in this browser only. Different browsers, devices, or private windows have separate histories.</p>
+                </div>
+            `;
+
+            const toggleShow = inner.querySelector('#uw-a11y-history-toggle-show');
+            if (toggleShow) {
+                toggleShow.addEventListener('click', () => {
+                    this.historyShowAll = !this.historyShowAll;
+                    this.playSound('ui');
+                    this.renderHistoryView();
+                });
+            }
+
+            const clearUrlBtn = inner.querySelector('#uw-a11y-history-clear-url');
+            const clearAllBtn = inner.querySelector('#uw-a11y-history-clear-all');
+            // Two-step confirm pattern reused from dismiss
+            const armConfirm = (btn, label, action) => {
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    if (btn.dataset.confirming) {
+                        delete btn.dataset.confirming;
+                        action();
+                        return;
+                    }
+                    btn.dataset.confirming = '1';
+                    const orig = btn.textContent;
+                    btn.textContent = `Click again to confirm`;
+                    btn.classList.add('uw-a11y-dismiss-btn--confirming');
+                    setTimeout(() => {
+                        if (btn.isConnected) {
+                            delete btn.dataset.confirming;
+                            btn.textContent = orig;
+                            btn.classList.remove('uw-a11y-dismiss-btn--confirming');
+                        }
+                    }, 4000);
+                });
+            };
+            armConfirm(clearUrlBtn, 'Clear history for this URL', () => this.clearHistoryForCurrentUrl());
+            armConfirm(clearAllBtn, 'Clear all history', () => this.clearAllHistory());
         },
 
         // Walk the saved include selectors. For each [data-pinpoint-scope="pp-N"]
@@ -7583,7 +8729,8 @@
             return s.enableBestPractices !== false; // default true unless explicitly false
         },
 
-        // Combine user excludes with enforced internal ones
+        // Combine user excludes with enforced internal ones AND any selectors
+        // contributed by the active platform preset for the current hostname.
         getEffectiveExcludeSelectors: function() {
             const essentials = this.getEssentialExcludeSelectors();
             const defaults = this.getDefaultExcludeSelectors();
@@ -7592,16 +8739,21 @@
             const clean = (user || [])
                 .map(v => (v || '').toString().trim())
                 .filter(Boolean);
-            // Merge in order: essentials (always), defaults, then user additions
-            return [...new Set([ ...essentials, ...defaults, ...clean ])];
+            const presetExclude = this.getActivePresetSelectors().exclude;
+            // Merge in order: essentials (always), defaults, user additions, preset additions
+            return [...new Set([ ...essentials, ...defaults, ...clean, ...presetExclude ])];
         },
 
-        // Return user-configured include selectors (elements to restrict scan to)
+        // Return effective include selectors (elements to restrict scan to).
+        // Combines user-typed scope with any scope contributed by the active
+        // platform preset for the current hostname.
         getEffectiveIncludeSelectors: function() {
             const s = this.loadSettings();
             const user = Array.isArray(s.includeSelectors) ? s.includeSelectors
                 : (typeof s.includeSelectors === 'string' ? s.includeSelectors.split(',') : []);
-            return user.map(v => (v || '').toString().trim()).filter(Boolean);
+            const userClean = user.map(v => (v || '').toString().trim()).filter(Boolean);
+            const presetScope = this.getActivePresetSelectors().scope;
+            return [...new Set([ ...userClean, ...presetScope ])];
         },
 
         // Build axe-core context object (excludes only; include-scope is applied
@@ -7612,9 +8764,12 @@
         },
 
         // Human-readable label for the scope banner — translates data-pinpoint-scope
-        // attribute selectors back into tag+id+class descriptions.
+        // attribute selectors back into tag+id+class descriptions. Returns only
+        // the user-typed (manual) selectors; preset contributions are surfaced
+        // separately via getScopeBannerHtml so the banner can be worded
+        // differently when scope is preset-driven.
         getScopeDisplayLabel: function() {
-            return this.getEffectiveIncludeSelectors().map(sel => {
+            const formatSelector = (sel) => {
                 const attrMatch = sel.match(/^\[data-pinpoint-scope="([^"]+)"\]$/);
                 if (attrMatch) {
                     try {
@@ -7623,7 +8778,53 @@
                     } catch(_) {}
                 }
                 return sel;
-            }).join(', ');
+            };
+            const s = this.loadSettings();
+            const manual = Array.isArray(s.includeSelectors) ? s.includeSelectors
+                : (typeof s.includeSelectors === 'string' ? s.includeSelectors.split(',') : []);
+            return manual
+                .map(v => (v || '').toString().trim())
+                .filter(Boolean)
+                .map(formatSelector)
+                .join(', ');
+        },
+
+        // Builds the inner HTML of the active-preset / scope banner. Wording
+        // varies by what's actually shaping the scan:
+        //   • manual selectors only          → "Partial scan — scoped to: <selectors>"
+        //   • preset that contributes scope  → "Partial scan — <Preset> preset[ · just the content]"
+        //   • preset, excludes only          → "<Preset> preset — site chrome excluded"
+        //   • mixed manual + preset          → both surfaced
+        // Returns empty string when there is no preset and no manual scope.
+        getScopeBannerHtml: function() {
+            const hasScope = this.getEffectiveIncludeSelectors().length > 0;
+            const presetEntry = this.getActivePresetEntryForCurrentHost();
+            if (!hasScope && !presetEntry) return '';
+
+            const manualLabel = this.getScopeDisplayLabel();
+            const presets = this.getPlatformPresets();
+            const preset = presetEntry ? presets[presetEntry.preset] : null;
+            const presetScopeContributes = preset && this.getActivePresetSelectors().scope.length > 0;
+            const codeStyle = 'font-size:11px;';
+            const modeSuffix = (presetEntry && presetEntry.mode === 'content') ? ' · just the content' : '';
+
+            // Mixed: manual selectors AND preset scope
+            if (manualLabel && presetScopeContributes) {
+                return `<strong>Partial scan</strong> — scoped to: <code style="${codeStyle}">${this.escapeHtmlContent(manualLabel)}</code> · <strong>${this.escapeHtmlContent(preset.label)}</strong> preset${modeSuffix}`;
+            }
+            // Preset that scopes (e.g. LibGuides, or any preset in "just the content" mode)
+            if (presetScopeContributes) {
+                return `<strong>Partial scan</strong> — <strong>${this.escapeHtmlContent(preset.label)}</strong> preset${modeSuffix}`;
+            }
+            // Preset that only excludes (e.g. WordPress in whole-page mode)
+            if (preset) {
+                if (manualLabel) {
+                    return `<strong>Partial scan</strong> — scoped to: <code style="${codeStyle}">${this.escapeHtmlContent(manualLabel)}</code> · <strong>${this.escapeHtmlContent(preset.label)}</strong> preset`;
+                }
+                return `<strong>${this.escapeHtmlContent(preset.label)}</strong> preset — site chrome excluded`;
+            }
+            // Manual scope only
+            return `<strong>Partial scan</strong> — scoped to: <code style="${codeStyle}">${this.escapeHtmlContent(manualLabel)}</code>`;
         },
 
         // Returns a function that tests whether a DOM element is within the current scan scope.
@@ -10055,6 +11256,32 @@
                     <p class="uw-a11y-section-divider">Scanning</p>
 
                     <div class="uw-a11y-setting-card">
+                        <div class="uw-a11y-settings-2col">
+                            <div>
+                                <label for="uw-a11y-platform-preset" class="uw-a11y-setting-label">Platform Preset</label>
+                                <select id="uw-a11y-platform-preset" class="uw-a11y-input" aria-describedby="uw-a11y-platform-preset-help">
+                                    <option value="">No preset</option>
+                                    ${Object.entries(this.getPlatformPresets()).map(([key, p]) => {
+                                        const sel = this.getActivePresetForCurrentHost() === key ? ' selected' : '';
+                                        return `<option value="${this.escapeHtmlAttr(key)}"${sel}>${this.escapeHtmlContent(p.label)}</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="uw-a11y-scan-mode" class="uw-a11y-setting-label">Scan Mode</label>
+                                <select id="uw-a11y-scan-mode" class="uw-a11y-input" aria-describedby="uw-a11y-platform-preset-help" ${this.getActivePresetForCurrentHost() ? '' : 'disabled'}>
+                                    <option value="whole" ${this.getActivePresetModeForCurrentHost() === 'whole' ? 'selected' : ''}>Whole page</option>
+                                    <option value="content" ${this.getActivePresetModeForCurrentHost() === 'content' ? 'selected' : ''}>Just the content</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="uw-a11y-platform-preset-help" class="uw-a11y-helptext" style="margin-top:6px;">
+                            Adjusts <strong>Scan Scope</strong> and <strong>Exclude Selectors</strong> for the current site. <strong>Just the content</strong> further limits the scan to the preset's content area — useful if you only manage page content and not the theme. Remembered per&#8209;hostname (<code>${this.escapeHtmlContent(this.getCurrentHostname() || '(unknown)')}</code>). Re&#8209;scans automatically.
+                        </div>
+                        <div id="uw-a11y-platform-preset-active" class="uw-a11y-helptext" style="margin-top:4px;display:${this.getActivePresetForCurrentHost() ? 'block' : 'none'};color:#198754;"></div>
+                    </div>
+
+                    <div class="uw-a11y-setting-card">
                         <label for="uw-a11y-include-input" class="uw-a11y-setting-label">Scan Scope</label>
                         <div style="display:flex;gap:8px;align-items:center;">
                             <div style="position:relative;flex:1;min-width:0;">
@@ -10101,20 +11328,6 @@
                                 Pick element
                             </button>
                         </div>
-                        <div style="margin-top:8px;">
-                            <label for="uw-a11y-platform-preset" class="uw-a11y-setting-label" style="margin-bottom:4px;">Platform Preset</label>
-                            <select id="uw-a11y-platform-preset" class="uw-a11y-input" aria-describedby="uw-a11y-exclude-help">
-                                <option value="">Add Platform Exclusions...</option>
-                                <option value="wordpress">WordPress</option>
-                                <option value="drupal">Drupal</option>
-                                <option value="squarespace">Squarespace</option>
-                                <option value="wix">Wix</option>
-                                <option value="shopify">Shopify</option>
-                                <option value="joomla">Joomla</option>
-                                <option value="webflow">Webflow</option>
-                                <option value="libguides">LibGuides</option>
-                            </select>
-                        </div>
                         <div id="uw-a11y-exclude-help" class="uw-a11y-helptext">Comma‑separated CSS selectors skipped during scanning. Essential internal UI is always excluded.</div>
                     </div>
 
@@ -10156,12 +11369,35 @@
                     <p class="uw-a11y-section-divider">Results</p>
 
                     <div class="uw-a11y-setting-card">
-                        <div class="uw-a11y-setting-label">Dismissed False Positives</div>
-                        <div class="uw-a11y-helptext" style="margin-bottom:10px;">Issues you've dismissed as false positives are hidden from results and remembered across sessions.</div>
+                        <div class="uw-a11y-setting-label">Dismissed Issues</div>
+                        <div class="uw-a11y-helptext" style="margin-bottom:10px;">Issues you've dismissed are hidden from results and remembered across sessions.</div>
                         <div style="display:flex;align-items:center;gap:12px;">
                             <span id="uw-a11y-dismissed-count" style="font-size:13px;color:#555;"></span>
                             <button id="uw-a11y-clear-dismissed" class="uw-a11y-btn uw-a11y-btn-secondary" style="font-size:12px;padding:4px 10px;" hidden
                                 onclick="window.uwAccessibilityChecker.clearDismissedIssues()">Restore all dismissed</button>
+                        </div>
+                    </div>
+
+                    <p class="uw-a11y-section-divider">History</p>
+
+                    <div class="uw-a11y-pref-row">
+                        <div class="uw-a11y-pref-label">
+                            <strong>Track score history for this site</strong>
+                            <span>Save each scan locally so you can chart accessibility trends over time. Stored only in this browser, scoped to the URL path.</span>
+                        </div>
+                        <label class="uw-a11y-toggle" aria-label="Track score history for this site">
+                            <input id="uw-a11y-history-toggle" type="checkbox" ${this.isHistoryTrackingEnabled() ? 'checked' : ''}>
+                            <span class="uw-a11y-toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="uw-a11y-setting-card">
+                        <div class="uw-a11y-setting-label">Stored history</div>
+                        <div class="uw-a11y-helptext" style="margin-bottom:10px;" id="uw-a11y-history-summary">Calculating…</div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button id="uw-a11y-clear-history-url" class="uw-a11y-btn uw-a11y-btn-secondary" style="font-size:12px;padding:4px 10px;">Clear history for this URL</button>
+                            <button id="uw-a11y-clear-history-all" class="uw-a11y-btn uw-a11y-btn-secondary" style="font-size:12px;padding:4px 10px;">Clear all history</button>
+                            <a href="#" id="uw-a11y-open-history" class="uw-a11y-btn uw-a11y-btn-secondary" style="font-size:12px;padding:4px 10px;text-decoration:none;">Open history view</a>
                         </div>
                     </div>
                 </div>
@@ -10191,14 +11427,20 @@
             const pickExcludeBtn = this.shadowRoot.getElementById('uw-a11y-pick-exclude-element');
             const clearExcludeBtn = this.shadowRoot.getElementById('uw-a11y-clear-exclude');
             const platformPreset = this.shadowRoot.getElementById('uw-a11y-platform-preset');
+            const scanModeSelect = this.shadowRoot.getElementById('uw-a11y-scan-mode');
 
-            // Snapshot values at render time for dirty comparison
+            // Snapshot values at render time for dirty comparison. Platform
+            // preset + scan mode are also tracked here so changing them only
+            // *previews* the choice in the form; nothing is written to the
+            // host-preset map or re-scanned until Save and Re-scan is clicked.
             const snap = () => ({
                 exclude: input.value,
                 include: includeInput.value,
                 wcagSpec: wcagSpecSel.value,
                 wcagLevel: wcagLevelSel.value,
                 bp: bpInput.checked,
+                preset: platformPreset ? platformPreset.value : '',
+                scanMode: scanModeSelect ? scanModeSelect.value : 'whole'
             });
             let initialValues = snap();
 
@@ -10209,7 +11451,9 @@
                     || now.include !== initialValues.include
                     || now.wcagSpec !== initialValues.wcagSpec
                     || now.wcagLevel !== initialValues.wcagLevel
-                    || now.bp !== initialValues.bp;
+                    || now.bp !== initialValues.bp
+                    || now.preset !== initialValues.preset
+                    || now.scanMode !== initialValues.scanMode;
                 actionsBar.hidden = !dirty;
                 if (!dirty && msg) msg.textContent = '';
             };
@@ -10274,32 +11518,53 @@
                 });
             }
 
-            // Platform preset dropdown — appends CMS-specific exclude selectors
-            const platformPresets = {
-                wordpress: '#wpadminbar, #adminmenuwrap, #adminmenuback, #adminmenumain, #wpfooter',
-                drupal: '#toolbar-administration, .toolbar-bar, .toolbar-tray',
-                squarespace: '.sqs-announcement-bar-dropzone, .sqs-cookie-banner-v2',
-                wix: '#WIX_ADS, #SITE_HEADER, .wixAds',
-                shopify: '.shopify-section--announcement-bar, #preview-bar-iframe, #admin-bar-iframe',
-                joomla: '#atum-sidebar, .atum-contract, #subhead-container',
-                webflow: '.w-webflow-badge',
-                libguides: 'main'
+            // Platform preset + Scan Mode dropdowns. Selecting a preset and/or
+            // mode only previews the choice — both go into the dirty snapshot
+            // and are committed together when the user clicks Save and Re-scan
+            // below. This lets you pick (e.g.) WordPress + "just the content"
+            // in a single round-trip rather than triggering two scans.
+            const presetActiveLabel = this.shadowRoot.getElementById('uw-a11y-platform-preset-active');
+            const renderPresetActiveLabel = () => {
+                if (!presetActiveLabel) return;
+                const name = this.getActivePresetForCurrentHost();
+                if (!name) {
+                    presetActiveLabel.style.display = 'none';
+                    presetActiveLabel.textContent = '';
+                    return;
+                }
+                const preset = this.getPlatformPresets()[name];
+                const mode = this.getActivePresetModeForCurrentHost();
+                const effectiveScope = this.getActivePresetSelectors().scope.join(', ');
+                const parts = [];
+                if (effectiveScope)  parts.push(`adds <code>${this.escapeHtmlContent(effectiveScope)}</code> to scan scope`);
+                if (preset.exclude)  parts.push(`adds <code>${this.escapeHtmlContent(preset.exclude)}</code> to excludes`);
+                const modeLabel = mode === 'content' ? ' · just the content' : '';
+                presetActiveLabel.style.display = 'block';
+                presetActiveLabel.innerHTML = `✓ <strong>${this.escapeHtmlContent(preset.label)}</strong>${modeLabel} active for <code>${this.escapeHtmlContent(this.getCurrentHostname())}</code> — ${parts.join('; ') || 'no additional selectors'}.`;
             };
+            renderPresetActiveLabel();
 
             if (platformPreset) {
                 platformPreset.addEventListener('change', () => {
-                    const selectors = platformPresets[platformPreset.value];
-                    if (!selectors) return;
-                    const existing = input.value.trim();
-                    // Merge without duplicating selectors already present
-                    const existingSet = new Set(existing.split(',').map(s => s.trim()).filter(Boolean));
-                    const newSelectors = selectors.split(',').map(s => s.trim()).filter(s => s && !existingSet.has(s));
-                    if (newSelectors.length > 0) {
-                        input.value = existing ? existing + ', ' + newSelectors.join(', ') : newSelectors.join(', ');
+                    // Toggle Scan Mode availability based on preset selection;
+                    // when no preset is picked, "just the content" has nothing
+                    // to act on. Clearing the preset also normalizes mode back
+                    // to "whole" so the dirty snapshot doesn't leave a
+                    // mismatched mode behind.
+                    if (scanModeSelect) {
+                        scanModeSelect.disabled = !platformPreset.value;
+                        if (!platformPreset.value) scanModeSelect.value = 'whole';
                     }
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    platformPreset.value = '';
                     this.playSound('ui');
+                    checkDirty();
+                });
+            }
+
+            if (scanModeSelect) {
+                scanModeSelect.addEventListener('change', () => {
+                    if (!platformPreset || !platformPreset.value) return;
+                    this.playSound('ui');
+                    checkDirty();
                 });
             }
 
@@ -10334,6 +11599,65 @@
                 });
             }
 
+            // History tracking toggle + Clear buttons
+            const historyToggle = this.shadowRoot.getElementById('uw-a11y-history-toggle');
+            const clearHistUrlBtn = this.shadowRoot.getElementById('uw-a11y-clear-history-url');
+            const clearHistAllBtn = this.shadowRoot.getElementById('uw-a11y-clear-history-all');
+            const openHistoryLink = this.shadowRoot.getElementById('uw-a11y-open-history');
+            const historySummary = this.shadowRoot.getElementById('uw-a11y-history-summary');
+
+            const refreshHistorySummary = () => {
+                if (!historySummary) return;
+                const all = this.loadHistoryAll();
+                const urls = Object.keys(all);
+                const total = urls.reduce((s, k) => s + (Array.isArray(all[k]) ? all[k].length : 0), 0);
+                const here = (all[this.getCurrentHistoryBucketKey()] || []).length;
+                historySummary.textContent = `${here} scan${here === 1 ? '' : 's'} on this URL · ${total} scan${total === 1 ? '' : 's'} across ${urls.length} URL${urls.length === 1 ? '' : 's'} on this site.`;
+            };
+            refreshHistorySummary();
+
+            if (historyToggle) {
+                historyToggle.addEventListener('change', () => {
+                    this.setHistoryTrackingEnabled(historyToggle.checked);
+                    this.playSound('ui');
+                    this.renderHistoryView();
+                });
+            }
+
+            // Two-step confirm for clear buttons (label flips to "Click again to confirm")
+            const armConfirm = (btn, action) => {
+                if (!btn) return;
+                btn.addEventListener('click', () => {
+                    if (btn.dataset.confirming) {
+                        delete btn.dataset.confirming;
+                        action();
+                        refreshHistorySummary();
+                        return;
+                    }
+                    btn.dataset.confirming = '1';
+                    const orig = btn.textContent;
+                    btn.dataset.origText = orig;
+                    btn.textContent = 'Click again to confirm';
+                    btn.classList.add('uw-a11y-dismiss-btn--confirming');
+                    setTimeout(() => {
+                        if (btn.isConnected && btn.dataset.confirming) {
+                            delete btn.dataset.confirming;
+                            btn.textContent = btn.dataset.origText || orig;
+                            btn.classList.remove('uw-a11y-dismiss-btn--confirming');
+                        }
+                    }, 4000);
+                });
+            };
+            armConfirm(clearHistUrlBtn, () => this.clearHistoryForCurrentUrl());
+            armConfirm(clearHistAllBtn, () => this.clearAllHistory());
+
+            if (openHistoryLink) {
+                openHistoryLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.showView('history');
+                });
+            }
+
             const parseSelectors = (val) => val.split(',').map(s => s.trim()).filter(Boolean);
             const validateSelectors = (arr) => {
                 for (const sel of arr) {
@@ -10357,7 +11681,12 @@
                     msg.className = 'uw-a11y-msg err';
                     return;
                 }
+                // Merge into the existing settings rather than overwriting —
+                // otherwise unrelated keys (trackHistory, dockPosition,
+                // defaultResultsView) get wiped by Save and Re-scan.
+                const existing = this.loadSettings();
                 const toSave = {
+                    ...existing,
                     excludeSelectors: this.filterOutEssential(arr),
                     includeSelectors: includeArr,
                     enableBestPractices: !!(bpInput && bpInput.checked),
@@ -10378,6 +11707,13 @@
                     if (keptIds.has(id)) pruned[id] = fallbacks[id];
                 });
                 this.savePickerScopeFallbacks(pruned);
+                // Commit the platform preset + scan mode picks for this host.
+                // Done as part of Save and Re-scan so the user can stage both
+                // (preset and mode) before triggering a single re-scan.
+                const pendingPreset = platformPreset ? platformPreset.value : '';
+                const pendingMode = scanModeSelect ? scanModeSelect.value : 'whole';
+                this.setActivePresetForCurrentHost(pendingPreset, pendingMode);
+                renderPresetActiveLabel();
                 // Update snapshot so bar hides after save
                 initialValues = snap();
                 actionsBar.hidden = true;
@@ -10395,6 +11731,15 @@
                 if (bpInput) bpInput.checked = !!defaults.enableBestPractices;
                 if (wcagSpecSel) wcagSpecSel.value = defaults.wcagSpec;
                 if (wcagLevelSel) wcagLevelSel.value = defaults.wcagLevel;
+                // Reset the platform preset + scan mode UI back to whatever
+                // is currently saved for this host. (We don't clear the
+                // host-preset record on reset — Reset is for "restore my
+                // tweaks", not "wipe all per-host memory".)
+                if (platformPreset) platformPreset.value = this.getActivePresetForCurrentHost() || '';
+                if (scanModeSelect) {
+                    scanModeSelect.value = this.getActivePresetModeForCurrentHost();
+                    scanModeSelect.disabled = !platformPreset || !platformPreset.value;
+                }
                 updateClearBtn();
                 updateClearExcludeBtn();
                 // Update snapshot to match restored defaults → hides bar
@@ -10435,16 +11780,19 @@
                   body: '<p>By default, Pinpoint scans the entire page. Use <strong>Scan Scope</strong> in Settings to limit the scan to specific areas.</p><ul><li>Enter one or more CSS selectors (comma-separated), e.g. <code>#main, .content-area</code>.</li><li>Or click <strong>Pick element</strong> to visually click an element on the page — its selector is added automatically.</li></ul><p>This is useful when you only want to audit a particular component or section without noise from the rest of the page.</p>' },
                 { id: 'help-exclude', cat: 'tool', title: 'Exclude Selectors',
                   keys: 'exclude selector ignore skip hide admin bar toolbar cms platform preset wordpress drupal',
-                  body: '<p>Exclude Selectors let you skip parts of the page during scanning. This is especially useful for CMS admin bars and toolbars you don\'t control.</p><ul><li>Enter CSS selectors in the Exclude field, e.g. <code>#wpadminbar, .admin-toolbar</code>.</li><li>Use <strong>Pick element</strong> to visually select elements to exclude.</li><li>Use the <strong>Platform Preset</strong> dropdown to auto-populate exclusions for popular platforms like WordPress, Drupal, Squarespace, Shopify, Wix, Joomla, Webflow, or LibGuides.</li></ul><p>Pinpoint always excludes its own UI elements automatically.</p>' },
+                  body: '<p>Exclude Selectors let you skip parts of the page during scanning. This is especially useful for CMS admin bars and toolbars you don\'t control.</p><ul><li>Enter CSS selectors in the Exclude field, e.g. <code>#wpadminbar, .admin-toolbar</code>.</li><li>Use <strong>Pick element</strong> to visually select elements to exclude.</li><li>Use the <strong>Platform Preset</strong> dropdown above to apply common scope/exclude rules for WordPress, Drupal, Squarespace, Shopify, Wix, Joomla, Webflow, or LibGuides. Presets are remembered per&nbsp;hostname, so picking <em>LibGuides</em> on a guide site sets scan scope to <code>main</code> only on that hostname; visiting a different site won\'t apply it.</li></ul><p>Pinpoint always excludes its own UI elements automatically.</p>' },
                 { id: 'help-pick-element', cat: 'tool', title: 'Pick Element',
                   keys: 'pick element picker click visual select cursor crosshair',
                   body: '<p>The Pick Element feature lets you visually click elements on the page instead of writing CSS selectors by hand.</p><ul><li>Click <strong>Pick element</strong> next to either the Scan Scope or Exclude Selectors field.</li><li>The settings panel fades and your cursor becomes a crosshair.</li><li>Hover over elements to see them highlighted with a tooltip showing their tag and class.</li><li>Click an element to add its selector to the field.</li><li>Press <strong>Escape</strong> or click <strong>Done picking</strong> to exit picker mode.</li></ul>' },
                 { id: 'help-wcag-settings', cat: 'tool', title: 'WCAG Version & Level',
                   keys: 'wcag version level conformance 2.0 2.1 2.2 A AA AAA settings standard',
                   body: '<p>In Settings under Accessibility, you can choose which WCAG version and conformance level to test against.</p><ul><li><strong>WCAG 2.0 / 2.1 / 2.2</strong> — newer versions add additional success criteria. 2.1 is the most widely adopted standard.</li><li><strong>Level A</strong> — minimum accessibility requirements.</li><li><strong>Level AA</strong> — the recommended target for most sites (and the legal standard in many jurisdictions).</li><li><strong>Level AAA</strong> — highest standard; enables enhanced contrast ratio rules (7:1 for normal text).</li></ul><p>Default is WCAG 2.1 AA.</p>' },
-                { id: 'help-false-positives', cat: 'tool', title: 'Dismissing False Positives',
-                  keys: 'false positive dismiss hide restore issue wrong incorrect noise',
-                  body: '<p>If a reported issue is a false positive (the tool flagged it but it\'s actually fine), you can dismiss it:</p><ul><li>Expand the issue and click the <strong>Dismiss</strong> button.</li><li>Dismissed issues are hidden from results and remembered across sessions for the current site.</li><li>To restore dismissed issues, go to <strong>Settings → Results → Restore all dismissed</strong>.</li></ul>' },
+                { id: 'help-false-positives', cat: 'tool', title: 'Dismissing Issues',
+                  keys: 'dismiss hide restore issue noise false positive ignore skip',
+                  body: '<p>You can dismiss any reported issue to hide it from results — for example, a false positive, a known limitation you can\'t address, third-party markup you don\'t control, or just to focus on something else for now.</p><ul><li>Expand the issue and click the <strong>Dismiss</strong> button (it asks for a quick confirm to avoid accidents).</li><li>Dismissed issues are hidden from results and remembered across sessions for the current site.</li><li>To restore dismissed issues, go to <strong>Settings → Results → Restore all dismissed</strong>.</li></ul>' },
+                { id: 'help-history', cat: 'tool', title: 'Score History',
+                  keys: 'history score chart trend graph compare over time previous',
+                  body: '<p>Pinpoint records each scan you run for the current URL so you can chart the accessibility trend over time. Open the <strong>History</strong> tab to see the line chart, a stacked bar of issue counts, the change since the previous scan, and lists of rules that were introduced or resolved.</p><ul><li>History is bucketed by URL <em>path</em> only — query strings and fragments are ignored, so different filtered views of the same page count as one site.</li><li>Stored locally in this browser, scoped to this origin. Different browsers, devices, or private windows have separate histories.</li><li>You can disable tracking, or clear history for this URL or for the entire site, in <strong>Settings → History</strong>.</li><li>Points on the chart that used a different WCAG level or a scoped scan are drawn with a hollow dot — they aren\'t directly comparable to the rest.</li></ul>' },
                 { id: 'help-manual-verify', cat: 'tool', title: 'Manual Verification',
                   keys: 'manual verify check mark verified instance checkbox confirm',
                   body: '<p>Some issues need human judgment. Use the Prev/Next pager to step through each instance, then mark the one you\'re currently looking at as verified using the checkbox below the issue. A "X of N reviewed" indicator shows your progress. The Guided walkthrough and the Advanced view share the same per-instance state, so you can switch between them at any time without losing track. Once every instance of a rule is verified, the entire group is visually marked as complete.</p>' },
@@ -11258,7 +12606,7 @@
             }
             const dismissedBanner = dismissed.size > 0 ? `
                 <div class="uw-a11y-dismissed-banner">
-                    ${dismissed.size} issue${dismissed.size !== 1 ? 's' : ''} dismissed as false positive${dismissed.size !== 1 ? 's' : ''} &mdash;
+                    ${dismissed.size} issue${dismissed.size !== 1 ? 's' : ''} dismissed &mdash;
                     <button class="uw-a11y-link-btn" onclick="window.uwAccessibilityChecker.clearDismissedIssues()">Restore all</button>
                 </div>
             ` : '';
@@ -11308,7 +12656,7 @@
                         <div class=\"issue-meta\"><div><strong>Impact:</strong> ${this.escapeHtmlContent(firstIssue.impact || 'unknown')}
                         ${firstIssue.helpUrl ? `<br><a href=\"${this.escapeUrl(firstIssue.helpUrl)}\" target=\"_blank\" class=\"learn-more\">Learn more about this rule</a>` : ''}
                         </div>
-                        <button class=\"uw-a11y-dismiss-btn\" title=\"Mark as false positive and hide from results\" onclick=\"window.uwAccessibilityChecker.dismissIssue('${this.escapeJavaScript(ruleId)}', this); event.stopPropagation();\">Dismiss</button>
+                        <button class=\"uw-a11y-dismiss-btn\" title=\"Hide this issue from results\" onclick=\"window.uwAccessibilityChecker.dismissIssue('${this.escapeJavaScript(ruleId)}', this); event.stopPropagation();\">Dismiss</button>
                         </div>
                     </div>`;
             }).join('');
@@ -11341,14 +12689,14 @@
             if (btn && !btn.dataset.confirming) {
                 btn.dataset.confirming = '1';
                 btn.textContent = 'Confirm dismiss';
-                btn.title = 'Only dismiss if this is a confirmed false positive. Click again to confirm.';
+                btn.title = 'Click again to confirm dismissing this issue.';
                 btn.classList.add('uw-a11y-dismiss-btn--confirming');
 
                 const t = setTimeout(() => {
                     if (btn.isConnected) {
                         delete btn.dataset.confirming;
                         btn.textContent = 'Dismiss';
-                        btn.title = 'Mark as false positive and hide from results';
+                        btn.title = 'Hide this issue from results';
                         btn.classList.remove('uw-a11y-dismiss-btn--confirming');
                     }
                 }, 4000);
@@ -12078,10 +13426,38 @@
                 
                 ${scoreData ? this.renderScoreDial(scoreData) : ''}
 
-                ${this.getEffectiveIncludeSelectors().length > 0 ? `
+                ${(() => {
+                    const hintKey = this.getResultsPresetHintKey();
+                    if (!hintKey) return '';
+                    const preset = this.getPlatformPresets()[hintKey];
+                    const presetLabel = preset.label;
+                    const hintMode = preset.hintMode === 'content' ? 'content' : 'whole';
+                    // Phrase the question by what the preset would actually do
+                    // when applied in its hintMode. LibGuides defaults to
+                    // content-only ("scope to the guide body"); WP/Drupal/etc.
+                    // default to whole-page ("apply preset / exclude chrome").
+                    let question;
+                    if (hintMode === 'content') {
+                        question = `Looks like a <strong>${this.escapeHtmlContent(presetLabel)}</strong> site. Scope this scan to the ${this.escapeHtmlContent(presetLabel)} content area only?`;
+                    } else if ((preset.exclude || '').trim() && !(preset.scope || '').trim()) {
+                        question = `Looks like a <strong>${this.escapeHtmlContent(presetLabel)}</strong> site. Apply the preset to skip site chrome (admin bars, etc.)?`;
+                    } else {
+                        question = `Looks like a <strong>${this.escapeHtmlContent(presetLabel)}</strong> site. Apply the matching preset for cleaner results?`;
+                    }
+                    return `
+                        <div id="uw-a11y-preset-hint" role="status" class="uw-a11y-preset-hint" data-preset="${this.escapeHtmlAttr(hintKey)}" data-mode="${this.escapeHtmlAttr(hintMode)}">
+                            <svg class="uw-a11y-preset-hint-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                            <span class="uw-a11y-preset-hint-text">${question}</span>
+                            <button type="button" class="uw-a11y-preset-hint-apply" data-preset="${this.escapeHtmlAttr(hintKey)}" data-mode="${this.escapeHtmlAttr(hintMode)}">Apply</button>
+                            <button type="button" class="uw-a11y-preset-hint-dismiss" aria-label="Dismiss platform suggestion" title="Don't show this again on this site">✕</button>
+                        </div>
+                    `;
+                })()}
+
+                ${(this.getEffectiveIncludeSelectors().length > 0 || this.getActivePresetEntryForCurrentHost()) ? `
                 <div role="status" style="background:rgba(79,70,229,0.07);border:1px solid rgba(79,70,229,0.25);border-radius:8px;padding:8px 12px;font-size:12px;color:#4f46e5;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                    <span><strong>Partial scan</strong> — scoped to: <code style="font-size:11px;">${this.escapeHtmlAttr(this.getScopeDisplayLabel())}</code></span>
+                    <span>${this.getScopeBannerHtml()}</span>
                     <a href="#" onclick="window.uwAccessibilityChecker.showView('settings');return false;" style="margin-left:auto;font-size:11px;color:inherit;text-decoration:underline;">Edit scope</a>
                 </div>` : ''}
 
@@ -12144,7 +13520,31 @@
             `;
             // Animate the score dial and number on initial render
             this.startResultsScoreAnimation();
-            
+
+            // Wire up the platform-preset hint pill (Apply / Dismiss) if it
+            // was rendered above. Apply triggers a re-scan; Dismiss writes a
+            // per-hostname dismissal so we don't pester the user again.
+            const presetHint = this.shadowRoot.getElementById('uw-a11y-preset-hint');
+            if (presetHint) {
+                const applyBtn = presetHint.querySelector('.uw-a11y-preset-hint-apply');
+                const dismissBtn = presetHint.querySelector('.uw-a11y-preset-hint-dismiss');
+                if (applyBtn) applyBtn.addEventListener('click', () => {
+                    const key = applyBtn.dataset.preset;
+                    if (!key) return;
+                    const mode = applyBtn.dataset.mode === 'content' ? 'content' : 'whole';
+                    this.setActivePresetForCurrentHost(key, mode);
+                    this.playSound('verify');
+                    this.scoreAnimationPlayed = false;
+                    this.runAxeChecks();
+                });
+                if (dismissBtn) dismissBtn.addEventListener('click', () => {
+                    const key = presetHint.dataset.preset;
+                    if (key) this.markPresetHintDismissed(key);
+                    this.playSound('ui');
+                    presetHint.remove();
+                });
+            }
+
             // Add event listener for score info icon
             const scoreInfo = this.shadowRoot.querySelector('.uw-a11y-score-info');
             if (scoreInfo) {
@@ -12185,15 +13585,33 @@
 
             // Announce results to screen readers
             this.announceResults(scoreData, counts);
-            
+
             // Initialize inspector tools after DOM is ready
             this.initInspectorTools();
-            
+
             // Set focus to the panel for keyboard accessibility
             this.setFocusToPanel();
 
             // Play scan-complete chime
             this.playSound('complete');
+
+            // Record this scan in the per-URL history (no-op when disabled in
+            // settings). After recording, render the sparkline below the dial.
+            try {
+                if (scoreData && typeof scoreData.score === 'number') {
+                    this.recordScanInHistory(scoreData.score, {
+                        errors: counts.error,
+                        warnings: counts.warning,
+                        info: counts.info,
+                        dismissed: this.getDismissedIssues().size,
+                        verified: counts.warningChecked
+                    }, this.collectRuleIdsForHistory(), this.getCurrentScanCfg());
+                }
+            } catch (e) {
+                console.warn('Failed to record scan history:', e);
+            }
+            // Mount the sparkline (no-op if there's only 1 entry)
+            this.renderScoreHistorySparkline();
         },
         
 
@@ -12299,6 +13717,7 @@
                             ${ratingText}
                         </span>
                     </div>
+                    <div id="uw-a11y-score-sparkline" class="uw-a11y-score-sparkline" style="display:none;"></div>
                 </div>
             `;
         },
