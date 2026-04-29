@@ -34,6 +34,7 @@
         // Initialize the checker
         init: function() {
             this.setupShadowDOM();
+            this.rehydratePickerScopes();
             this.checkForUpdates();
             this.showLoadingPanel();
             this.loadAxeCore();
@@ -1392,6 +1393,23 @@
             return 0;
         },
         
+        // Recognize CSS background-images that are decorative thin lines
+        // (fake underlines/borders done via `background-size: ... 2px`) rather
+        // than a real background behind the text. These shouldn't be measured
+        // as the element's background — the contrast walk should keep going.
+        // Currently catches explicit pixel heights ≤ 4px; percentage/keyword
+        // heights pass through (handled by the more-robust path if we add it).
+        isDecorativeThinBackground: function(computedStyles) {
+            const bgSize = computedStyles && computedStyles.backgroundSize;
+            if (!bgSize) return false;
+            // Only consider the first layer if multiple backgrounds are stacked.
+            const firstLayer = bgSize.split(',')[0].trim();
+            const parts = firstLayer.split(/\s+/);
+            const heightStr = parts[1] || parts[0];
+            const pxMatch = heightStr && heightStr.match(/^([\d.]+)px$/);
+            return !!(pxMatch && parseFloat(pxMatch[1]) <= 4);
+        },
+
         // Extract color contrast information with enhanced pixel-based analysis
         extractColorContrastInfo: function(node) {
             try {
@@ -1413,16 +1431,7 @@
                     const cs = window.getComputedStyle(el);
                     const bgImg = cs.backgroundImage;
                     if (!bgImg || bgImg === 'none' || !bgImg.includes('gradient')) return null;
-                    // Skip gradients used as decorative underlines/borders (e.g. background-size: 100% 2px).
-                    // When the background-size height is ≤ 4px the gradient is a CSS trick for a thin
-                    // line, not a real background behind the text, so it should not affect contrast.
-                    const bgSize = cs.backgroundSize;
-                    if (bgSize) {
-                        const parts = bgSize.trim().split(/\s+/);
-                        const heightStr = parts[1] || parts[0];
-                        const pxMatch = heightStr && heightStr.match(/^([\d.]+)px$/);
-                        if (pxMatch && parseFloat(pxMatch[1]) <= 4) return null;
-                    }
+                    if (this.isDecorativeThinBackground(cs)) return null;
                     return bgImg;
                 };
 
@@ -1741,11 +1750,11 @@
 
         // Check if element has complex background that might need pixel analysis
         hasComplexBackground: function(element, styles) {
-            return (
-                styles.backgroundImage !== 'none' ||
-                styles.background.includes('gradient') ||
-                this.hasComplexAncestorBackground(element)
-            );
+            // A thin decorative background (fake underline) isn't really a
+            // background behind the text — don't pull in pixel analysis for it.
+            const hasOwnBg = (styles.backgroundImage !== 'none' || styles.background.includes('gradient'))
+                && !this.isDecorativeThinBackground(styles);
+            return hasOwnBg || this.hasComplexAncestorBackground(element);
         },
 
         // Check if colors contain transparency
@@ -1766,8 +1775,9 @@
             
             while (parent && depth < 5) { // Check up to 5 levels up
                 const parentStyles = window.getComputedStyle(parent);
-                if (parentStyles.backgroundImage !== 'none' || 
-                    parentStyles.background.includes('gradient')) {
+                if ((parentStyles.backgroundImage !== 'none' ||
+                    parentStyles.background.includes('gradient'))
+                    && !this.isDecorativeThinBackground(parentStyles)) {
                     return true;
                 }
                 parent = parent.parentElement;
@@ -2052,8 +2062,10 @@
                     return bg;
                 }
                 
-                // Check for background images or gradients
-                if (styles.backgroundImage !== 'none') {
+                // Check for background images or gradients. Skip decorative thin
+                // backgrounds (fake underlines via background-size: ... 2px) —
+                // they aren't really behind the text, so keep walking up.
+                if (styles.backgroundImage !== 'none' && !this.isDecorativeThinBackground(styles)) {
                     // For images/gradients, we'll estimate based on common patterns
                     return this.estimateBackgroundFromImage(styles);
                 }
@@ -3817,49 +3829,49 @@
                                                     <input type="radio" name="uw-a11y-cvd" value="deuteranomaly">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Green appears weak</span>
-                                                        <span class="uw-a11y-cvd-meta">Deuteranomaly · ~5% of men</span>
+                                                        <span class="uw-a11y-cvd-meta">Deuteranomaly · ~5% of men, ~0.4% of women</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
                                                     <input type="radio" name="uw-a11y-cvd" value="deuteranopia">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Green greatly reduced</span>
-                                                        <span class="uw-a11y-cvd-meta">Deuteranopia · ~1% of men</span>
+                                                        <span class="uw-a11y-cvd-meta">Deuteranopia · ~1% of men, ~0.01% of women</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
                                                     <input type="radio" name="uw-a11y-cvd" value="protanomaly">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Red appears weak</span>
-                                                        <span class="uw-a11y-cvd-meta">Protanomaly · ~1% of men</span>
+                                                        <span class="uw-a11y-cvd-meta">Protanomaly · ~1% of men, ~0.03% of women</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
                                                     <input type="radio" name="uw-a11y-cvd" value="protanopia">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Red greatly reduced</span>
-                                                        <span class="uw-a11y-cvd-meta">Protanopia · ~1% of men</span>
+                                                        <span class="uw-a11y-cvd-meta">Protanopia · ~1% of men, ~0.01% of women</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
                                                     <input type="radio" name="uw-a11y-cvd" value="tritanomaly">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Blue appears weak</span>
-                                                        <span class="uw-a11y-cvd-meta">Tritanomaly · rare</span>
+                                                        <span class="uw-a11y-cvd-meta">Tritanomaly · rare; affects men and women equally</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
                                                     <input type="radio" name="uw-a11y-cvd" value="tritanopia">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Blue greatly reduced</span>
-                                                        <span class="uw-a11y-cvd-meta">Tritanopia · very rare</span>
+                                                        <span class="uw-a11y-cvd-meta">Tritanopia · very rare; affects men and women equally</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
                                                     <input type="radio" name="uw-a11y-cvd" value="achromatomaly">
                                                     <span class="uw-a11y-cvd-main">
                                                         <span class="uw-a11y-cvd-name">Color appears weak</span>
-                                                        <span class="uw-a11y-cvd-meta">Achromatomaly · very rare</span>
+                                                        <span class="uw-a11y-cvd-meta">Achromatomaly · very rare; affects men and women equally</span>
                                                     </span>
                                                 </label>
                                                 <label class="uw-a11y-cvd-option">
@@ -5139,6 +5151,18 @@
                     background: rgba(255,255,255,0.75);
                     border-radius: 10px;
                     border: 1px solid rgba(0,0,0,0.08);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                }
+                #uw-a11y-panel .uw-a11y-manual-check .uw-a11y-instance-progress {
+                    font-size: 12px;
+                    color: #155724;
+                    opacity: 0.85;
+                    font-variant-numeric: tabular-nums;
+                    white-space: nowrap;
                 }
                 #uw-a11y-panel .uw-a11y-checkbox {
                     display: flex;
@@ -7458,6 +7482,99 @@
             try {
                 localStorage.setItem(this.getSettingsKey(), JSON.stringify(settings || {}));
             } catch (_) { /* ignore quota errors */ }
+        },
+
+        // Per-origin map of pickerScopeId → structural selector. Lets us
+        // re-stamp data-pinpoint-scope attributes after a page navigation
+        // (the attribute is dynamic; the structural selector survives in
+        // localStorage). If the structural selector matches nothing on the
+        // new page we clear the scope rather than silently bypass it.
+        getPickerScopeFallbacks: function() {
+            try {
+                const json = localStorage.getItem(this.getSettingsKey() + ':scope-fallbacks');
+                if (!json) return {};
+                const parsed = JSON.parse(json);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (_) { return {}; }
+        },
+
+        savePickerScopeFallbacks: function(map) {
+            try {
+                localStorage.setItem(this.getSettingsKey() + ':scope-fallbacks', JSON.stringify(map || {}));
+            } catch (_) { /* ignore */ }
+        },
+
+        savePickerScopeFallback: function(scopeId, structuralSelector) {
+            const map = this.getPickerScopeFallbacks();
+            map[scopeId] = structuralSelector;
+            this.savePickerScopeFallbacks(map);
+        },
+
+        // Walk the saved include selectors. For each [data-pinpoint-scope="pp-N"]
+        // entry, try to re-stamp the attribute onto the element matched by the
+        // stored structural fallback. Drop entries that can't be rehydrated.
+        // Bumps _pickerScopeSeq so newly-picked scopes don't collide with
+        // existing IDs from a previous session.
+        rehydratePickerScopes: function() {
+            const s = this.loadSettings();
+            const includes = Array.isArray(s.includeSelectors)
+                ? s.includeSelectors
+                : (typeof s.includeSelectors === 'string'
+                    ? s.includeSelectors.split(',').map(v => v.trim()).filter(Boolean)
+                    : []);
+            if (includes.length === 0) return;
+
+            const fallbacks = this.getPickerScopeFallbacks();
+            const survivors = [];
+            const survivingFallbacks = {};
+            let highestSeq = this._pickerScopeSeq || 0;
+            let mutated = false;
+
+            includes.forEach(sel => {
+                const m = sel.match(/^\[data-pinpoint-scope="(pp-(\d+))"\]$/);
+                if (!m) {
+                    // Non-picker selector — keep as-is.
+                    survivors.push(sel);
+                    return;
+                }
+                const scopeId = m[1];
+                const seqNum = parseInt(m[2], 10);
+                if (!isNaN(seqNum) && seqNum > highestSeq) highestSeq = seqNum;
+
+                // Already on the page from this session? Keep.
+                if (document.querySelector(sel)) {
+                    survivors.push(sel);
+                    if (fallbacks[scopeId]) survivingFallbacks[scopeId] = fallbacks[scopeId];
+                    return;
+                }
+
+                // Try to re-stamp via the structural fallback.
+                const fallback = fallbacks[scopeId];
+                if (fallback) {
+                    try {
+                        const el = document.querySelector(fallback);
+                        if (el) {
+                            el.setAttribute('data-pinpoint-scope', scopeId);
+                            survivors.push(sel);
+                            survivingFallbacks[scopeId] = fallback;
+                            return;
+                        }
+                    } catch (_) { /* invalid selector — fall through to drop */ }
+                }
+
+                // Couldn't rehydrate — drop this scope entry.
+                mutated = true;
+            });
+
+            this._pickerScopeSeq = highestSeq;
+
+            if (mutated) {
+                s.includeSelectors = survivors;
+                this.saveSettings(s);
+                this.savePickerScopeFallbacks(survivingFallbacks);
+            } else if (Object.keys(survivingFallbacks).length !== Object.keys(fallbacks).length) {
+                this.savePickerScopeFallbacks(survivingFallbacks);
+            }
         },
 
         // Whether best-practice suggestions are enabled (default: true)
@@ -9987,7 +10104,7 @@
                         <div style="margin-top:8px;">
                             <label for="uw-a11y-platform-preset" class="uw-a11y-setting-label" style="margin-bottom:4px;">Platform Preset</label>
                             <select id="uw-a11y-platform-preset" class="uw-a11y-input" aria-describedby="uw-a11y-exclude-help">
-                                <option value="">Add CMS exclusions...</option>
+                                <option value="">Add Platform Exclusions...</option>
                                 <option value="wordpress">WordPress</option>
                                 <option value="drupal">Drupal</option>
                                 <option value="squarespace">Squarespace</option>
@@ -9995,6 +10112,7 @@
                                 <option value="shopify">Shopify</option>
                                 <option value="joomla">Joomla</option>
                                 <option value="webflow">Webflow</option>
+                                <option value="libguides">LibGuides</option>
                             </select>
                         </div>
                         <div id="uw-a11y-exclude-help" class="uw-a11y-helptext">Comma‑separated CSS selectors skipped during scanning. Essential internal UI is always excluded.</div>
@@ -10164,7 +10282,8 @@
                 wix: '#WIX_ADS, #SITE_HEADER, .wixAds',
                 shopify: '.shopify-section--announcement-bar, #preview-bar-iframe, #admin-bar-iframe',
                 joomla: '#atum-sidebar, .atum-contract, #subhead-container',
-                webflow: '.w-webflow-badge'
+                webflow: '.w-webflow-badge',
+                libguides: 'main'
             };
 
             if (platformPreset) {
@@ -10246,6 +10365,19 @@
                     wcagLevel: wcagLevelSel ? wcagLevelSel.value : 'AA'
                 };
                 this.saveSettings(toSave);
+                // Drop any stored picker-scope fallback whose scope id is no
+                // longer present in the include list.
+                const keptIds = new Set(
+                    includeArr
+                        .map(sel => (sel.match(/^\[data-pinpoint-scope="(pp-\d+)"\]$/) || [])[1])
+                        .filter(Boolean)
+                );
+                const fallbacks = this.getPickerScopeFallbacks();
+                const pruned = {};
+                Object.keys(fallbacks).forEach(id => {
+                    if (keptIds.has(id)) pruned[id] = fallbacks[id];
+                });
+                this.savePickerScopeFallbacks(pruned);
                 // Update snapshot so bar hides after save
                 initialValues = snap();
                 actionsBar.hidden = true;
@@ -10303,7 +10435,7 @@
                   body: '<p>By default, Pinpoint scans the entire page. Use <strong>Scan Scope</strong> in Settings to limit the scan to specific areas.</p><ul><li>Enter one or more CSS selectors (comma-separated), e.g. <code>#main, .content-area</code>.</li><li>Or click <strong>Pick element</strong> to visually click an element on the page — its selector is added automatically.</li></ul><p>This is useful when you only want to audit a particular component or section without noise from the rest of the page.</p>' },
                 { id: 'help-exclude', cat: 'tool', title: 'Exclude Selectors',
                   keys: 'exclude selector ignore skip hide admin bar toolbar cms platform preset wordpress drupal',
-                  body: '<p>Exclude Selectors let you skip parts of the page during scanning. This is especially useful for CMS admin bars and toolbars you don\'t control.</p><ul><li>Enter CSS selectors in the Exclude field, e.g. <code>#wpadminbar, .admin-toolbar</code>.</li><li>Use <strong>Pick element</strong> to visually select elements to exclude.</li><li>Use the <strong>Platform Preset</strong> dropdown to auto-populate exclusions for popular platforms like WordPress, Drupal, Squarespace, Shopify, Wix, Joomla, or Webflow.</li></ul><p>Pinpoint always excludes its own UI elements automatically.</p>' },
+                  body: '<p>Exclude Selectors let you skip parts of the page during scanning. This is especially useful for CMS admin bars and toolbars you don\'t control.</p><ul><li>Enter CSS selectors in the Exclude field, e.g. <code>#wpadminbar, .admin-toolbar</code>.</li><li>Use <strong>Pick element</strong> to visually select elements to exclude.</li><li>Use the <strong>Platform Preset</strong> dropdown to auto-populate exclusions for popular platforms like WordPress, Drupal, Squarespace, Shopify, Wix, Joomla, Webflow, or LibGuides.</li></ul><p>Pinpoint always excludes its own UI elements automatically.</p>' },
                 { id: 'help-pick-element', cat: 'tool', title: 'Pick Element',
                   keys: 'pick element picker click visual select cursor crosshair',
                   body: '<p>The Pick Element feature lets you visually click elements on the page instead of writing CSS selectors by hand.</p><ul><li>Click <strong>Pick element</strong> next to either the Scan Scope or Exclude Selectors field.</li><li>The settings panel fades and your cursor becomes a crosshair.</li><li>Hover over elements to see them highlighted with a tooltip showing their tag and class.</li><li>Click an element to add its selector to the field.</li><li>Press <strong>Escape</strong> or click <strong>Done picking</strong> to exit picker mode.</li></ul>' },
@@ -10315,7 +10447,7 @@
                   body: '<p>If a reported issue is a false positive (the tool flagged it but it\'s actually fine), you can dismiss it:</p><ul><li>Expand the issue and click the <strong>Dismiss</strong> button.</li><li>Dismissed issues are hidden from results and remembered across sessions for the current site.</li><li>To restore dismissed issues, go to <strong>Settings → Results → Restore all dismissed</strong>.</li></ul>' },
                 { id: 'help-manual-verify', cat: 'tool', title: 'Manual Verification',
                   keys: 'manual verify check mark verified instance checkbox confirm',
-                  body: '<p>Some issues need human judgment. After reviewing an issue, you can mark all its instances as manually verified using the checkbox at the bottom of the expanded issue group. Verified rules are visually distinguished so you can track your audit progress.</p>' },
+                  body: '<p>Some issues need human judgment. Use the Prev/Next pager to step through each instance, then mark the one you\'re currently looking at as verified using the checkbox below the issue. A "X of N reviewed" indicator shows your progress. The Guided walkthrough and the Advanced view share the same per-instance state, so you can switch between them at any time without losing track. Once every instance of a rule is verified, the entire group is visually marked as complete.</p>' },
                 { id: 'help-keyboard', cat: 'tool', title: 'Keyboard Shortcuts',
                   keys: 'keyboard shortcut hotkey key binding ctrl shift command',
                   body: '<p>Pinpoint supports keyboard shortcuts for efficient use:</p><ul><li><strong>Ctrl+Shift+A</strong> (or <strong>Cmd+Shift+A</strong> on Mac) — Launch or toggle Pinpoint.</li><li><strong>Escape</strong> — Close the panel or exit Pick Element mode.</li><li><strong>Tab / Shift+Tab</strong> — Navigate through results and controls.</li></ul>' },
@@ -10890,6 +11022,15 @@
             el.setAttribute('data-pinpoint-scope', scopeId);
             const sel = `[data-pinpoint-scope="${scopeId}"]`;
 
+            // Also remember a structural fallback selector so we can
+            // re-stamp the data attribute when the user navigates to another
+            // page on the same origin (the attribute itself doesn't survive
+            // navigation; the selector lookup does).
+            const fallback = this.generateSelectorForElement(el);
+            if (fallback) {
+                this.savePickerScopeFallback(scopeId, fallback);
+            }
+
             const input = this.pickerTargetInput;
             if (input) {
                 const existing = input.value.trim();
@@ -11151,13 +11292,14 @@
                         </h4>
                         <div class=\"how-to-fix\"><div class=\"how-to-fix-icon\"><svg viewBox=\"0 0 512 512\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M331.8 224.1c28.29 0 54.88 10.99 74.86 30.97l19.59 19.59c40.01-17.74 71.25-53.3 81.62-96.65c5.725-23.92 5.34-47.08 .2148-68.4c-2.613-10.88-16.43-14.51-24.34-6.604l-68.9 68.9h-75.6V97.2l68.9-68.9c7.912-7.912 4.275-21.73-6.604-24.34c-21.32-5.125-44.48-5.51-68.4 .2148c-55.3 13.23-98.39 60.22-107.2 116.4C224.5 128.9 224.2 137 224.3 145l82.78 82.86C315.2 225.1 323.5 224.1 331.8 224.1zM384 278.6c-23.16-23.16-57.57-27.57-85.39-13.9L191.1 158L191.1 95.99l-127.1-95.99L0 63.1l96 127.1l62.04 .0077l106.7 106.6c-13.67 27.82-9.251 62.23 13.91 85.39l117 117.1c14.62 14.5 38.21 14.5 52.71-.0016l52.75-52.75c14.5-14.5 14.5-38.08-.0016-52.71L384 278.6zM227.9 307L168.7 247.9l-148.9 148.9c-26.37 26.37-26.37 69.08 0 95.45C32.96 505.4 50.21 512 67.5 512s34.54-6.592 47.72-19.78l119.1-119.1C225.5 352.3 222.6 329.4 227.9 307zM64 472c-13.25 0-24-10.75-24-24c0-13.26 10.75-24 24-24S88 434.7 88 448C88 461.3 77.25 472 64 472z\"/></svg></div><div><strong>How to fix:</strong> <span id=\"recommendation-${this.sanitizeHtmlId(ruleId)}\"></span></div></div>
                         ${isManualReview ? `
-                        <div class=\"uw-a11y-manual-check\"> 
-                          <label class=\"uw-a11y-checkbox\"> 
-                            <input type=\"checkbox\" id=\"check-${this.sanitizeHtmlId(ruleId)}\" ${this.isRuleVerified(ruleId) ? 'checked' : ''} 
-                                   onchange=\"window.uwAccessibilityChecker.toggleRuleVerification('${this.escapeJavaScript(ruleId)}'); event.stopPropagation();\"> 
+                        <div class=\"uw-a11y-manual-check\">
+                          <label class=\"uw-a11y-checkbox\">
+                            <input type=\"checkbox\" id=\"check-${this.sanitizeHtmlId(ruleId)}\" ${this.isInstanceVerifiedAt(issueGroup, 0) ? 'checked' : ''}
+                                   onchange=\"window.uwAccessibilityChecker.toggleInstanceVerification('${this.escapeJavaScript(ruleId)}'); event.stopPropagation();\">
                             <span class=\"uw-a11y-checkmark\"></span>
-                            <span class=\"uw-a11y-check-label\">${this.isRuleVerified(ruleId) ? `All ${issueGroup.length} instances manually verified ✓` : `Mark all ${issueGroup.length} instances as verified`}</span>
+                            <span class=\"uw-a11y-check-label\" id=\"check-label-${this.sanitizeHtmlId(ruleId)}\">${this.getInstanceCheckLabel(issueGroup, 0)}</span>
                           </label>
+                          ${issueGroup.length > 1 ? `<span class=\"uw-a11y-instance-progress\" id=\"progress-${this.sanitizeHtmlId(ruleId)}\">${this.countVerifiedInGroup(issueGroup)} of ${issueGroup.length} reviewed</span>` : ''}
                         </div>` : ''}
                         ${firstIssue.detailedInfo && firstIssue.detailedInfo.length > 0 ? `
                             <button class=\"uw-a11y-details-toggle\" onclick=\"window.uwAccessibilityChecker.toggleDetails('${this.escapeJavaScript(ruleId)}'); event.stopPropagation();\">Show technical details</button>
@@ -11344,8 +11486,10 @@
         // Anything not in this map falls back to the rule's own title/description,
         // so adding entries is purely additive — broken rules just look like the
         // existing detailed view.
-        getFriendlyRuleHeadline: function(ruleId, fallback) {
-            const map = {
+        getFriendlyRuleHeadline: function(ruleId, fallback, issueType) {
+            // Headlines for confirmed violations — the checker has measured these
+            // and knows they fail, so the wording is definitive.
+            const violationMap = {
                 'color-contrast': 'Text is hard to read in places',
                 'color-contrast-enhanced': 'Text contrast is below the AAA threshold',
                 'image-alt': 'Some images are missing alt text',
@@ -11413,7 +11557,53 @@
                 'blink': 'A <blink> element will distract some users',
                 'marquee': 'A <marquee> element will distract some users'
             };
-            return map[ruleId] || fallback;
+
+            // Headlines for manual-review (axe `incomplete`) items — the checker
+            // couldn't determine whether the rule passes, so the wording is
+            // suggestive ("may", "might") rather than definitive.
+            const manualReviewMap = {
+                'color-contrast': 'Text may be hard to read in places',
+                'color-contrast-enhanced': 'Text contrast may be below the AAA threshold',
+                'image-alt': 'Some images may be missing meaningful alt text',
+                'input-image-alt': 'An image button may need alt text',
+                'area-alt': 'An image-map area may be missing alt text',
+                'svg-img-alt': 'An SVG used as an image may be missing a label',
+                'role-img-alt': 'An element with role="img" may need a label',
+                'label': 'A form input may not have a label',
+                'select-name': 'A select dropdown may not have an accessible name',
+                'button-name': 'A button may not have an accessible name',
+                'link-name': 'A link may not have readable text',
+                'link-in-text-block': 'A link may blend in with surrounding text',
+                'empty-heading': 'A heading may be empty',
+                'heading-order': 'Headings may skip levels in the page outline',
+                'aria-allowed-attr': 'Some ARIA attributes may be misused',
+                'aria-required-attr': 'An ARIA widget may be missing required attributes',
+                'aria-required-children': 'An ARIA container may be missing expected children',
+                'aria-required-parent': 'An ARIA element may need a specific parent',
+                'aria-valid-attr-value': 'An ARIA attribute may have an unexpected value',
+                'aria-hidden-focus': 'Something focusable may be hidden from screen readers',
+                'aria-input-field-name': 'An ARIA input may not have an accessible name',
+                'aria-toggle-field-name': 'An ARIA toggle may not have an accessible name',
+                'aria-command-name': 'An ARIA command may not have an accessible name',
+                'aria-progressbar-name': 'A progress bar may not have an accessible name',
+                'aria-meter-name': 'A meter may not have an accessible name',
+                'aria-tooltip-name': 'A tooltip may not have an accessible name',
+                'aria-treeitem-name': 'A tree item may not have an accessible name',
+                'frame-title': 'An iframe may not have a meaningful title',
+                'frame-title-unique': 'Two iframes may share the same title',
+                'object-alt': 'An <object> element may not have a text alternative',
+                'video-caption': 'A video may be missing captions',
+                'audio-caption': 'Audio may be missing a caption track',
+                'region': 'Some content may sit outside any landmark region',
+                'scrollable-region-focusable': 'A scrollable region may not be keyboard reachable',
+                'autocomplete-valid': 'A form field’s autocomplete value may be invalid',
+                'nested-interactive': 'An interactive element may be nested inside another'
+            };
+
+            if (issueType === 'warning' && manualReviewMap[ruleId]) {
+                return manualReviewMap[ruleId];
+            }
+            return violationMap[ruleId] || fallback;
         },
 
         // Allowlist of axe rule IDs whose problems and fixes are understandable
@@ -11544,7 +11734,7 @@
             }
 
             const cards = top.map((entry, idx) => {
-                const headline = this.getFriendlyRuleHeadline(entry.first.ruleId, entry.first.title);
+                const headline = this.getFriendlyRuleHeadline(entry.first.ruleId, entry.first.title, entry.first.type);
                 const count = entry.nodeCount;
                 const affectsLine = count === 1
                     ? 'Affects 1 element on this page.'
@@ -11669,7 +11859,7 @@
             const entry = this.walkthroughGroups[idx];
             if (!entry) return;
             const first = entry.first;
-            const headline = this.getFriendlyRuleHeadline(first.ruleId, first.title);
+            const headline = this.getFriendlyRuleHeadline(first.ruleId, first.title, first.type);
             const count = entry.nodeCount;
             const countLine = count === 1 ? '1 element' : `${count} elements`;
 
@@ -12273,26 +12463,30 @@
             const currentIndex = this.currentInstances[ruleId] || 0;
             const currentIssue = issueGroup[currentIndex];
             const sanitizedRuleId = this.sanitizeHtmlId(ruleId);
-            
+
             // Update displayed content
             const descElement = this.shadowRoot.getElementById(`description-${sanitizedRuleId}`);
             const recElement = this.shadowRoot.getElementById(`recommendation-${sanitizedRuleId}`);
             const currentSpan = this.shadowRoot.getElementById(`current-${sanitizedRuleId}`);
             const detailedContent = this.shadowRoot.getElementById(`detailed-content-${sanitizedRuleId}`);
-            
+
             if (descElement) descElement.textContent = currentIssue.description.split('\n')[0];
             if (recElement) recElement.innerHTML = currentIssue.recommendation;
             if (currentSpan) currentSpan.textContent = currentIndex + 1;
             if (detailedContent && currentIssue.detailedInfo) {
                 detailedContent.innerHTML = this.renderDetailedInfo(currentIssue.detailedInfo);
             }
-            
+
             // Update navigation buttons
             const prevBtn = this.shadowRoot.getElementById(`prev-${sanitizedRuleId}`);
             const nextBtn = this.shadowRoot.getElementById(`next-${sanitizedRuleId}`);
-            
+
             if (prevBtn) prevBtn.disabled = currentIndex === 0;
             if (nextBtn) nextBtn.disabled = currentIndex === issueGroup.length - 1;
+
+            // Per-instance verification: keep the checkbox + label tied to the
+            // instance the user just navigated to (manual-review rules only).
+            this.syncAdvancedRuleUI(ruleId);
         },
 
         // Highlight the current instance of a rule
@@ -12459,30 +12653,108 @@
             this.playSound(newVerificationState ? 'verify' : 'ui');
         },
 
+        // ── Per-instance verification helpers (Advanced view) ─────────────
+        // The Advanced view used to have a single "Mark all N instances as
+        // verified" checkbox per rule. It now mirrors the Guided walkthrough:
+        // the checkbox tracks the *current* instance shown by the Prev/Next
+        // pager, with a "X of N reviewed" progress indicator beside it.
+
+        isInstanceVerifiedAt: function(issueGroup, idx) {
+            const issue = issueGroup && issueGroup[idx];
+            return !!(issue && issue.uniqueId && this.checkedItems.has(issue.uniqueId));
+        },
+
+        countVerifiedInGroup: function(issueGroup) {
+            if (!Array.isArray(issueGroup)) return 0;
+            let n = 0;
+            for (const i of issueGroup) {
+                if (i && i.uniqueId && this.checkedItems.has(i.uniqueId)) n++;
+            }
+            return n;
+        },
+
+        getInstanceCheckLabel: function(issueGroup, idx) {
+            const verified = this.isInstanceVerifiedAt(issueGroup, idx);
+            const multi = Array.isArray(issueGroup) && issueGroup.length > 1;
+            if (multi) {
+                return verified
+                    ? `Instance ${idx + 1} verified ✓`
+                    : `Mark instance ${idx + 1} as verified`;
+            }
+            return verified ? 'Manually verified ✓' : 'Mark as verified';
+        },
+
+        // Toggle verification for the instance currently shown in the
+        // Advanced view's pager. Auto-advances to the next unverified instance
+        // on mark (matching the Guided walkthrough behavior).
+        toggleInstanceVerification: function(ruleId) {
+            const groupedIssues = this.groupIssuesByRule(this.issues);
+            const issueGroup = groupedIssues[ruleId];
+            if (!issueGroup || issueGroup.length === 0) return;
+
+            const idx = Math.min(this.currentInstances[ruleId] || 0, issueGroup.length - 1);
+            const issue = issueGroup[idx];
+            if (!issue || !issue.uniqueId) return;
+
+            const wasVerified = this.checkedItems.has(issue.uniqueId);
+            if (wasVerified) {
+                this.checkedItems.delete(issue.uniqueId);
+            } else {
+                this.checkedItems.add(issue.uniqueId);
+            }
+            sessionStorage.setItem('uw-a11y-checked', JSON.stringify(Array.from(this.checkedItems)));
+            this.updateScore();
+            this.playSound(wasVerified ? 'ui' : 'verify');
+
+            // On mark (not unmark), advance to the next unverified instance
+            // so the pager + checkbox reflect the next thing to review.
+            if (!wasVerified && issueGroup.length > 1) {
+                let nextIdx = -1;
+                for (let j = idx + 1; j < issueGroup.length; j++) {
+                    const it = issueGroup[j];
+                    if (it && it.uniqueId && !this.checkedItems.has(it.uniqueId)) { nextIdx = j; break; }
+                }
+                if (nextIdx === -1) {
+                    for (let j = 0; j < idx; j++) {
+                        const it = issueGroup[j];
+                        if (it && it.uniqueId && !this.checkedItems.has(it.uniqueId)) { nextIdx = j; break; }
+                    }
+                }
+                if (nextIdx !== -1) {
+                    this.currentInstances[ruleId] = nextIdx;
+                    this.updateInstanceDisplay(ruleId, issueGroup);
+                    this.highlightCurrentInstance(ruleId, true);
+                }
+            }
+
+            this.syncAdvancedRuleUI(ruleId);
+        },
+
         // Reflect the current verification state of a rule onto the Advanced
-        // view's existing DOM (checkbox, label, "checked" card class). Used by
-        // both bulk verification (toggleRuleVerification) and per-instance
-        // verification from the Guided walkthrough so the two views stay in
-        // sync without re-rendering the whole Advanced list.
+        // view's existing DOM (checkbox, label, progress, "checked" card class).
+        // Used by per-instance toggles in either view so the two stay in sync
+        // without re-rendering the whole Advanced list. The checkbox now tracks
+        // the *current* instance shown by the pager; the card-level "checked"
+        // class still flips on only when *every* instance is verified.
         syncAdvancedRuleUI: function(ruleId) {
             const sanitizedRuleId = this.sanitizeHtmlId(ruleId);
             const checkbox = this.shadowRoot.getElementById(`check-${sanitizedRuleId}`);
-            const label = checkbox && checkbox.parentNode && checkbox.parentNode.querySelector('.uw-a11y-check-label');
+            const label = this.shadowRoot.getElementById(`check-label-${sanitizedRuleId}`);
+            const progress = this.shadowRoot.getElementById(`progress-${sanitizedRuleId}`);
             const issueDiv = this.shadowRoot.getElementById(`issue-${sanitizedRuleId}`);
             const groupedIssues = this.groupIssuesByRule(this.issues);
             const issueGroup = groupedIssues[ruleId];
             if (!issueGroup) return;
 
-            const newVerificationState = this.isRuleVerified(ruleId);
+            const idx = Math.min(this.currentInstances[ruleId] || 0, issueGroup.length - 1);
+            const instanceVerified = this.isInstanceVerifiedAt(issueGroup, idx);
+            const allVerified = this.isRuleVerified(ruleId);
 
-            if (checkbox) checkbox.checked = newVerificationState;
-            if (label) {
-                label.textContent = newVerificationState
-                    ? `All ${issueGroup.length} instances manually verified ✓`
-                    : `Mark all ${issueGroup.length} instances as verified`;
-            }
+            if (checkbox) checkbox.checked = instanceVerified;
+            if (label) label.textContent = this.getInstanceCheckLabel(issueGroup, idx);
+            if (progress) progress.textContent = `${this.countVerifiedInGroup(issueGroup)} of ${issueGroup.length} reviewed`;
             if (issueDiv) {
-                if (newVerificationState) issueDiv.classList.add('checked');
+                if (allVerified) issueDiv.classList.add('checked');
                 else issueDiv.classList.remove('checked');
             }
         },
