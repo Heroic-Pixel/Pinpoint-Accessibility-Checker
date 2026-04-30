@@ -9,7 +9,7 @@
     
             // Main accessibility checker object
         window.uwAccessibilityChecker = {
-            version: '1.7.0', // Current version
+            version: '1.7.1', // Current version
             websiteUrl: 'https://pinpoint.heroicpixel.com/', // Main website URL
             legacyDomainUrl: 'https://althe3rd.github.io/Pinpoint/', // Legacy domain for transition
             issues: [],
@@ -59,11 +59,8 @@
                 const globalStyle = document.createElement('style');
                 globalStyle.id = 'uw-a11y-global-styles';
                 globalStyle.textContent = `
-                    .uw-a11y-highlight {
-                        background: yellow !important;
-                        border: 2px solid red !important;
-                        box-shadow: 0 0 0 2px yellow !important;
-                    }
+                    /* The .uw-a11y-highlight rule is injected by applyHighlightStyles()
+                       into a separate stylesheet so users can change it at runtime. */
                     /* Temporarily reveal hidden ancestors during highlight */
                     [data-uw-a11y-reveal] {
                         display: block !important;
@@ -90,7 +87,89 @@
             }
 
             this.applyDockPosition(this.getDockPosition());
+            this.applyHighlightStyles();
         },
+
+        // ── Element highlight: user-customizable style + duration ───────────
+        // Style presets are CSS rule bodies applied to .uw-a11y-highlight.
+        // Duration is in milliseconds, or 0 meaning "stay until the user
+        // selects another issue or clicks elsewhere on the page".
+        getHighlightStylePresets: function() {
+            return {
+                classic: {
+                    label: 'Classic — yellow fill, red border',
+                    css: 'background: yellow !important; border: 2px solid red !important; box-shadow: 0 0 0 2px yellow !important;'
+                },
+                outline: {
+                    label: 'Outline — red ring, no fill',
+                    css: 'outline: 3px solid #dc3545 !important; outline-offset: 2px !important; box-shadow: 0 0 0 6px rgba(220,53,69,0.18) !important;'
+                },
+                glow: {
+                    label: 'Glow — soft blue halo',
+                    css: 'box-shadow: 0 0 0 3px rgba(59,130,246,0.85), 0 0 0 8px rgba(59,130,246,0.30) !important; outline: 1px solid rgba(59,130,246,0.95) !important; outline-offset: 1px !important;'
+                },
+                dashed: {
+                    label: 'Dashed — animated dashed border',
+                    css: 'outline: 2px dashed #dc3545 !important; outline-offset: 3px !important; animation: uw-a11y-highlight-dash 0.6s linear infinite !important;'
+                },
+                contrast: {
+                    label: 'High contrast — black background, yellow ring',
+                    css: 'background: #000 !important; color: #fff !important; box-shadow: 0 0 0 3px #ffeb3b, 0 0 0 6px #000 !important;'
+                }
+            };
+        },
+
+        getHighlightDurationOptions: function() {
+            return [
+                { value: 3000,  label: '3 seconds' },
+                { value: 5000,  label: '5 seconds (default)' },
+                { value: 10000, label: '10 seconds' },
+                { value: 0,     label: 'Until I click away or pick another issue' }
+            ];
+        },
+
+        getHighlightStyle: function() {
+            const s = this.loadSettings();
+            const presets = this.getHighlightStylePresets();
+            return presets[s.highlightStyle] ? s.highlightStyle : 'classic';
+        },
+
+        setHighlightStyle: function(name) {
+            const s = this.loadSettings();
+            s.highlightStyle = name;
+            this.saveSettings(s);
+            this.applyHighlightStyles();
+        },
+
+        getHighlightDuration: function() {
+            const s = this.loadSettings();
+            const allowed = new Set(this.getHighlightDurationOptions().map(o => o.value));
+            const v = (typeof s.highlightDuration === 'number') ? s.highlightDuration : 5000;
+            return allowed.has(v) ? v : 5000;
+        },
+
+        setHighlightDuration: function(ms) {
+            const s = this.loadSettings();
+            s.highlightDuration = ms;
+            this.saveSettings(s);
+        },
+
+        applyHighlightStyles: function() {
+            const styleId = 'uw-a11y-highlight-styles';
+            let el = document.getElementById(styleId);
+            if (!el) {
+                el = document.createElement('style');
+                el.id = styleId;
+                document.head.appendChild(el);
+            }
+            const preset = this.getHighlightStylePresets()[this.getHighlightStyle()];
+            const css = preset ? preset.css : this.getHighlightStylePresets().classic.css;
+            el.textContent =
+                '@keyframes uw-a11y-highlight-dash { to { outline-offset: 8px; } }\n' +
+                '.uw-a11y-highlight { ' + css + ' }';
+        },
+
+        getHighlightPosition: function() { /* unused — placeholder for future expansion */ return null; },
 
         getDockPosition: function() {
             const s = this.loadSettings();
@@ -837,10 +916,44 @@
                     .replace(/"/g, "&quot;")
                     .replace(/'/g, "&#039;");
             };
-            
-            // For now, just escape the text without complex regex processing
-            // This prevents HTML structure issues that were causing nesting problems
-            return escapeHtml(text);
+
+            let escaped = escapeHtml(text);
+
+            // Replace inline-action sentinels with real interactive buttons.
+            // Sentinels are inserted by recommendation builders and survive
+            // HTML escaping, so we expand them after escaping. Each entry maps
+            // a sentinel to (label, icon path, onclick handler).
+            const icon = (paths) => '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+            const button = (label, iconSvg, handler) =>
+                '<button type="button" class="uw-a11y-inline-action" onclick="' + handler + ';return false;">' + iconSvg + label + '</button>';
+
+            const ICON_SEARCH    = icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>');
+            const ICON_HEADING   = icon('<path d="M6 4v16M18 4v16M6 12h12"/>');
+            const ICON_LINK      = icon('<path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 1 0-7.07-7.07L11 5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07L13 19"/>');
+            const ICON_IMAGE     = icon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>');
+            const ICON_EYE       = icon('<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/>');
+            const ICON_LAYOUT    = icon('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/>');
+            const ICON_TAB       = icon('<path d="M5 12h14M13 6l6 6-6 6"/>');
+            const ICON_FOCUS     = icon('<rect x="6" y="6" width="12" height="12" rx="1"/><path d="M3 3h3M21 3h-3M3 21h3M21 21h-3"/>');
+
+            const replacements = [
+                ['{{OPEN_CONTRAST_CHECKER}}', button('Open the built-in Contrast Checker', ICON_SEARCH, 'window.uwAccessibilityChecker.openContrastChecker()')],
+                ['{{OPEN_INSPECTOR:outline}}',  button('Open the Page Outline',      ICON_HEADING, "window.uwAccessibilityChecker.openInspectorTool('outline')")],
+                ['{{OPEN_INSPECTOR:links}}',    button('Open the Links inspector',   ICON_LINK,    "window.uwAccessibilityChecker.openInspectorTool('links')")],
+                ['{{OPEN_INSPECTOR:alt}}',      button('Open the Alt-text inspector', ICON_IMAGE,  "window.uwAccessibilityChecker.openInspectorTool('alt')")],
+                ['{{OPEN_INSPECTOR:cvd}}',      button('Open Color-blindness simulation', ICON_EYE, "window.uwAccessibilityChecker.openInspectorTool('cvd')")],
+                ['{{TOGGLE_LANDMARKS}}',        button('Toggle landmark overlay',    ICON_LAYOUT,  "window.uwAccessibilityChecker.toggleVisualization('landmarks')")],
+                ['{{TOGGLE_TAB_ORDER}}',        button('Toggle tab-order overlay',   ICON_TAB,     "window.uwAccessibilityChecker.toggleVisualization('tabOrder')")],
+                ['{{TOGGLE_FOCUS_INDICATORS}}', button('Toggle focus-indicator overlay', ICON_FOCUS, "window.uwAccessibilityChecker.toggleVisualization('focusIndicators')")]
+            ];
+
+            replacements.forEach(([sentinel, html]) => {
+                // Escape regex metachars in sentinel for safe global replace
+                const re = new RegExp(sentinel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                escaped = escaped.replace(re, html);
+            });
+
+            return escaped;
         },
         
         // Escape HTML attributes (for use in HTML attributes like aria-label)
@@ -1001,63 +1114,191 @@
             }
         },
         
+        // Extract the human-readable specifics from axe's failureSummary (e.g.
+        // "Fix all of the following: aria-label attribute is not well supported
+        // on a div with no valid role attribute"). Returns just the bulleted
+        // reasons, with the "Fix all/any of the following:" preamble stripped.
+        extractFailureSummary: function(node) {
+            if (!node || !node.failureSummary) return '';
+            return node.failureSummary
+                .replace(/Fix any of the following:\s*/gi, '')
+                .replace(/Fix all of the following:\s*/gi, '')
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean)
+                .join(' • ');
+        },
+
         // Manual review recommendations for verification guidance
         getManualReviewRecommendations: function() {
             return {
                 // Color contrast items that need manual verification
                 'color-contrast': (node, rule) => {
-                    return 'Manually verify the contrast meets WCAG standards. Use a contrast checker tool or browser extension to measure the exact ratio. For normal text, ensure at least 4.5:1 ratio; for large text (18pt+ or 14pt+ bold), ensure at least 3:1 ratio.';
+                    return 'Manually verify the contrast meets WCAG standards. {{OPEN_CONTRAST_CHECKER}} (foreground is prefilled from the failing element; sample the background with Pick element). For normal text, ensure at least 4.5:1 ratio; for large text (18pt+ or 14pt+ bold), ensure at least 3:1 ratio.';
                 },
-                
+
                 'color-contrast-enhanced': (node, rule) => {
-                    return 'Check if enhanced AAA contrast is needed for this content. Verify if 7:1 ratio for normal text or 4.5:1 for large text is required based on your accessibility requirements.';
+                    return 'Check if enhanced AAA contrast is needed for this content. {{OPEN_CONTRAST_CHECKER}} to measure the exact ratio — AAA requires 7:1 for normal text or 4.5:1 for large text.';
                 },
-                
+
                 // Audio/Video content requiring manual review
                 'audio-caption': (node, rule) => {
-                    return 'Listen to the audio content and verify: 1) Does it contain speech or important audio information? 2) Are captions or transcripts provided if needed? 3) Are any captions accurate and properly synchronized?';
+                    return 'Listen to the audio and verify: 1) Does it contain speech or important audio information? 2) Are captions or a transcript provided? 3) Are captions accurate and properly synchronized? If captions are missing, add them via <track kind="captions" src="..."> or provide a transcript adjacent to the audio.';
                 },
-                
+
                 'video-caption': (node, rule) => {
-                    return 'Watch the video content and verify: 1) Does it contain speech or important audio? 2) Are captions provided for all speech and sound effects? 3) Are captions accurate, synchronized, and properly formatted?';
+                    return 'Watch the video and verify: 1) Does it contain speech or important audio? 2) Are captions provided for all speech and sound effects? 3) Are captions accurate and synchronized? Add captions with <track kind="captions" src="captions.vtt" srclang="en" label="English"> if missing.';
                 },
-                
+
                 // Link purpose verification
                 'link-in-text-block': (node, rule) => {
-                    return 'Check if this link is distinguishable from surrounding text without relying on color alone. Verify there are visual indicators like underlines, different font weight, or other styling that works for colorblind users.';
+                    return 'Check that this link is distinguishable from surrounding text without relying on color alone. It needs an underline, a different font weight, or another non-color visual indicator so colorblind users can identify it. {{OPEN_INSPECTOR:cvd}} to preview the page through deuteranopia/protanopia/tritanopia filters and confirm the link still stands out.';
                 },
-                
+
                 'identical-links-same-purpose': (node, rule) => {
-                    return 'Review these links with identical text and verify they serve the same purpose or lead to the same destination. If they serve different purposes, make the link text more descriptive to differentiate them.';
+                    return 'Review these links with identical text and verify they go to the same destination. If they go to different destinations, change the link text (or add aria-label) so each one is uniquely descriptive — "Learn more about pricing" vs. "Learn more about features". {{OPEN_INSPECTOR:links}} to see every link on the page and its accessible name in one list.';
                 },
-                
-                // Hidden content verification  
+
+                // Hidden content verification
                 'hidden-content': (node, rule) => {
-                    return 'Verify this hidden content is appropriately hidden and still accessible to screen readers when needed. Check that important information isn\'t hidden from all users unintentionally.';
+                    return 'Verify this hidden content is appropriately hidden. If it should be available to screen readers, use display:none / visibility:hidden only when truly intended; if it should be visible to AT but not sighted users, use a visually-hidden CSS class instead of aria-hidden.';
                 },
-                
+
                 // ARIA usage that needs manual verification
                 'aria-hidden-focus': (node, rule) => {
-                    return 'Check if this focusable element with aria-hidden="true" is intentionally hidden from screen readers. Verify this doesn\'t hide important interactive content from assistive technologies.';
+                    return 'This element is hidden from screen readers but is still focusable, which traps keyboard users on an element they cannot perceive. Either remove aria-hidden, or remove the element from the tab order with tabindex="-1" and disable any interactive behavior.';
                 },
-                
+
+                'aria-prohibited-attr': (node, rule) => {
+                    const detail = this.extractFailureSummary(node);
+                    return (detail ? detail + '. ' : '') +
+                        'ARIA forbids accessible names on elements with the implicit role "generic" (plain <div>, <span>, etc.). Fix options: 1) remove the aria-label / aria-labelledby, 2) change the element to one with a real role (<nav>, <section>, <header>, <footer>, <aside>), or 3) add an explicit role like role="group" or role="region" to the existing element.';
+                },
+
+                'aria-allowed-attr': (node, rule) => {
+                    const detail = this.extractFailureSummary(node);
+                    return (detail ? detail + '. ' : '') +
+                        'This element\'s role does not allow the ARIA attribute(s) listed above. Either remove the disallowed attribute or change the element\'s role to one that supports it. Consult https://www.w3.org/TR/wai-aria-1.2/ for the supported attributes per role.';
+                },
+
+                'aria-allowed-role': (node, rule) => {
+                    const detail = this.extractFailureSummary(node);
+                    return (detail ? detail + '. ' : '') +
+                        'The role applied to this element is not allowed for this HTML tag (for example, role="button" on an <a> with an href, or role="heading" on an <h2>). Prefer the native semantic element, or remove the role.';
+                },
+
+                'aria-roledescription': (node, rule) => {
+                    return 'aria-roledescription replaces the role announced to screen readers. Verify the custom description is meaningful, localized, and only applied to elements with a non-abstract role. Test with NVDA, JAWS, or VoiceOver to confirm announcements are clear.';
+                },
+
+                'aria-text': (node, rule) => {
+                    return 'role="text" tells screen readers to announce this element\'s content as a single text run, ignoring inner elements. Verify all important interactive descendants are still keyboard reachable and that the flattened announcement still conveys the meaning.';
+                },
+
+                'empty-table-header': (node, rule) => {
+                    return 'This table header (<th>) appears empty. Verify whether it is intentionally blank (e.g. a corner cell) — if so, leave it; otherwise add header text describing the column or row.';
+                },
+
+                'frame-tested': (node, rule) => {
+                    return 'axe could not run inside this iframe (cross-origin or sandboxed). Manually load the framed content and run an accessibility scan against it directly, or coordinate with the iframe\'s owner to ensure it is tested.';
+                },
+
+                'frame-title-unique': (node, rule) => {
+                    return 'Two or more iframes share the same title. If they show different content, give each a unique, descriptive title attribute so screen-reader users can distinguish them.';
+                },
+
+                'scrollable-region-focusable': (node, rule) => {
+                    return 'A scrollable region must be reachable by keyboard. Add tabindex="0" to the scrolling element and a meaningful accessible name (aria-label or aria-labelledby) so keyboard users can scroll it without a mouse.';
+                },
+
+                'focus-order-semantics': (node, rule) => {
+                    return 'A non-semantic element (div/span) is in the tab order. Replace it with a semantic <button>, <a>, or <input>, OR add an appropriate role (role="button", role="link") and ensure keyboard handlers (Enter/Space) are wired up. {{TOGGLE_TAB_ORDER}} to see where this element falls in the focus sequence.';
+                },
+
+                'presentation-role-conflict': (node, rule) => {
+                    return 'role="presentation" / role="none" was applied to an element that has interactive children, an accessible name, or focusable descendants — the role is being ignored. Either remove the role, or remove the interactive/focusable content from the element.';
+                },
+
+                'tabindex': (node, rule) => {
+                    return 'Verify this positive tabindex value is necessary. Positive tabindex (1, 2, 3...) overrides natural DOM order and almost always creates a confusing focus order. Prefer tabindex="0" and let the DOM order determine focus. {{TOGGLE_TAB_ORDER}} to see the actual focus order on the page.';
+                },
+
                 // Complex widgets requiring manual testing
                 'nested-interactive': (node, rule) => {
-                    return 'Test this interactive element with keyboard navigation and screen readers. Verify all functionality is accessible and the focus order makes sense to users.';
+                    return 'This interactive element contains another interactive descendant (e.g. a button inside a link). Screen readers cannot expose nested interactives reliably. Restructure so each interactive control is a sibling, not a descendant.';
                 },
-                
-                // Content structure requiring human judgment
+
+                // Landmarks
                 'landmark-unique': (node, rule) => {
-                    return 'Review if multiple landmarks of the same type need distinguishing labels. Consider adding aria-label or aria-labelledby if users would benefit from clearer landmark identification.';
+                    return 'Multiple landmarks of the same type exist on the page (e.g. two <nav>s). Add a distinguishing aria-label or aria-labelledby to each one — for example aria-label="Primary" and aria-label="Footer" on two <nav> elements. {{TOGGLE_LANDMARKS}} to see every landmark on the page and which ones share names.';
                 },
-                
+
+                'landmark-no-duplicate-banner': (node, rule) => {
+                    return 'A <header> at the top level of the page (or role="banner") may only appear once. If you have multiple banners, demote the extras into a <section> with a heading, or scope them inside an <article> / <main>.';
+                },
+
+                'landmark-no-duplicate-contentinfo': (node, rule) => {
+                    return 'A page-level <footer> (or role="contentinfo") may only appear once. Move duplicate footers into <article> or <section>, or remove the duplicate role.';
+                },
+
+                'landmark-banner-is-top-level': (node, rule) => {
+                    return 'The <header>/banner landmark is nested inside another landmark (likely <main> or <article>). Move it out so it is a top-level child of <body>.';
+                },
+
+                'landmark-complementary-is-top-level': (node, rule) => {
+                    return 'The <aside>/complementary landmark is nested inside another landmark. Move it so it is a direct child of <body>, or remove the role if the content is not actually complementary to the page.';
+                },
+
+                'landmark-contentinfo-is-top-level': (node, rule) => {
+                    return 'The <footer>/contentinfo landmark is nested inside another landmark. Move it to be a top-level child of <body>.';
+                },
+
+                'landmark-main-is-top-level': (node, rule) => {
+                    return 'The <main> landmark is nested inside another landmark. Move it to be a direct child of <body> — there should be exactly one top-level <main>.';
+                },
+
+                'region': (node, rule) => {
+                    return 'Some content sits outside any landmark, so screen-reader users cannot jump to it via the landmarks rotor. Wrap it in a <main>, <nav>, <aside>, <section aria-labelledby="...">, <header>, or <footer> as appropriate. {{TOGGLE_LANDMARKS}} to see what is currently inside vs. outside a landmark.';
+                },
+
+                'bypass': (node, rule) => {
+                    return 'The page lacks a skip link or keyboard bypass. Add a skip link as the first focusable element: <a href="#main" class="skip-link">Skip to main content</a>, and ensure your <main> element has id="main". {{TOGGLE_TAB_ORDER}} to verify a skip link is the first focusable element after activating it.';
+                },
+
+                // Headings
                 'heading-structure': (node, rule) => {
-                    return 'Review the heading structure for logical flow. Verify headings accurately describe the content hierarchy and help users navigate and understand the page structure.';
+                    return 'Review the heading structure for logical flow. Headings should describe content hierarchy: H1 for page title, H2 for major sections, H3 nested under H2, etc. Don\'t skip levels or use heading tags purely for visual styling. {{OPEN_INSPECTOR:outline}} to see the full heading and landmark outline.';
                 },
-                
-                // Default for other manual review items
+
+                'empty-heading': (node, rule) => {
+                    return 'This heading appears empty. If it is decorative or holds an icon, remove the heading element. If it should be a heading, add visible text content. {{OPEN_INSPECTOR:outline}} to see how this heading appears in the page outline.';
+                },
+
+                // Forms
+                'autocomplete-valid': (node, rule) => {
+                    return 'The autocomplete attribute value is not in the WHATWG autofill spec. Use values like "name", "email", "tel", "street-address", "postal-code", "cc-number". See https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#autofill for the full list.';
+                },
+
+                'autocomplete-appropriate': (node, rule) => {
+                    return 'Verify the autocomplete value matches the field\'s purpose. autocomplete="name" should only be on a name field; autocomplete="email" only on an email field. Mismatches confuse password managers and assistive technology.';
+                },
+
+                // Meta
+                'meta-refresh': (node, rule) => {
+                    return 'A meta refresh redirects automatically, which can disorient users with cognitive disabilities and screen-reader users. Either remove the redirect or replace it with a user-controlled action ("Continue" button) and ensure the delay is at least 20× longer than needed, or removable.';
+                },
+
+                // Default for other manual review items — surface axe's own
+                // specifics so users see something actionable.
                 'default': (node, rule) => {
-                    return `Manually verify this element meets accessibility requirements. Review the content, test with assistive technologies if possible, and ensure it provides equivalent access for all users.`;
+                    const detail = this.extractFailureSummary(node);
+                    const help = rule && rule.help ? rule.help : '';
+                    if (detail) {
+                        return `${detail}. ` + (help ? `(${help}.) ` : '') +
+                            'Manually verify this element meets the rule above and test with assistive technologies if possible.';
+                    }
+                    return (help ? `${help}. ` : '') +
+                        'Manually verify this element meets accessibility requirements — review the content, test with assistive technologies, and ensure it provides equivalent access for all users.';
                 }
             };
         },
@@ -1070,14 +1311,14 @@
                     const element = this.getElementFromNode(node);
                     if (element && element.tagName === 'IMG') {
                         if (element.src && element.src.includes('decorative') || element.getAttribute('role') === 'presentation') {
-                            return 'Add alt="" for decorative images, or add role="presentation" if the image is purely decorative.';
+                            return 'Add alt="" for decorative images, or add role="presentation" if the image is purely decorative. {{OPEN_INSPECTOR:alt}} to review every image\'s alt text in one list.';
                         }
-                        return 'Add descriptive alt text: <img src="..." alt="Brief description...">. Describe the content and function, not just "image of..."';
+                        return 'Add descriptive alt text: <img src="..." alt="Brief description...">. Describe the content and function, not just "image of..." {{OPEN_INSPECTOR:alt}} to review every image\'s alt text in one list.';
                     }
-                    return 'Add appropriate alt text describing the image content and purpose.';
+                    return 'Add appropriate alt text describing the image content and purpose. {{OPEN_INSPECTOR:alt}} to review every image\'s alt text in one list.';
                 },
-                
-                'image-redundant-alt': 'Remove redundant words like "image of", "picture of", "graphic of" from alt text. Just describe what the image shows: alt="Red sports car" instead of alt="Image of a red sports car"',
+
+                'image-redundant-alt': 'Remove redundant words like "image of", "picture of", "graphic of" from alt text. Just describe what the image shows: alt="Red sports car" instead of alt="Image of a red sports car". {{OPEN_INSPECTOR:alt}} to scan every image\'s alt text at once.',
                 
                 // Forms
                 'label': (node, rule) => {
@@ -1107,27 +1348,27 @@
                 'color-contrast': (node, rule) => {
                     const colorInfo = this.extractColorContrastInfo(node);
                     if (colorInfo) {
-                        return `Current contrast is ${colorInfo.contrast} or may be difficult to determine due to the use of a gradient or image background. WCAG AA requires 4.5:1 for normal text, 3:1 for large text (18pt+ or 14pt+ bold).`;
+                        return `Current contrast is ${colorInfo.contrast} or may be difficult to determine due to the use of a gradient or image background. WCAG AA requires 4.5:1 for normal text, 3:1 for large text (18pt+ or 14pt+ bold). {{OPEN_CONTRAST_CHECKER}} to test alternate color combinations.`;
                     }
-                    return 'Improve text contrast ratio. Use darker text on light backgrounds or lighter text on dark backgrounds.';
+                    return 'Improve text contrast ratio. Use darker text on light backgrounds or lighter text on dark backgrounds. {{OPEN_CONTRAST_CHECKER}} to test combinations.';
                 },
                 
                 // Links
-                'link-name': 'Make link text descriptive. Instead of "click here" or "read more", use "Download annual report" or "Read more about accessibility testing". The link text should make sense out of context.',
-                
-                'link-in-text-block': 'Links in text need visual distinction beyond color alone. Add underlines, bold text, or other visual indicators that work for colorblind users.',
-                
+                'link-name': 'Make link text descriptive. Instead of "click here" or "read more", use "Download annual report" or "Read more about accessibility testing". The link text should make sense out of context. {{OPEN_INSPECTOR:links}} to audit every link on the page.',
+
+                'link-in-text-block': 'Links in text need visual distinction beyond color alone. Add underlines, bold text, or other visual indicators that work for colorblind users. {{OPEN_INSPECTOR:cvd}} to preview the page with colorblindness filters applied.',
+
                 // Headings
                 'heading-order': (node, rule) => {
                     const element = this.getElementFromNode(node);
                     if (element) {
                         const level = parseInt(element.tagName.charAt(1));
-                        return `Fix heading sequence - don't skip levels. After H${level-2}, use H${level-1}, not H${level}. Structure should be H1→H2→H3, not H1→H3.`;
+                        return `Fix heading sequence - don't skip levels. After H${level-2}, use H${level-1}, not H${level}. Structure should be H1→H2→H3, not H1→H3. {{OPEN_INSPECTOR:outline}} to see the full heading outline.`;
                     }
-                    return 'Use headings in sequential order (H1, H2, H3...) without skipping levels. Think of headings as a document outline.';
+                    return 'Use headings in sequential order (H1, H2, H3...) without skipping levels. Think of headings as a document outline. {{OPEN_INSPECTOR:outline}} to see the full heading outline.';
                 },
-                
-                'empty-heading': 'Add meaningful text inside headings. Remove empty headings or add descriptive content: <h2>Our Services</h2>',
+
+                'empty-heading': 'Add meaningful text inside headings. Remove empty headings or add descriptive content: <h2>Our Services</h2>. {{OPEN_INSPECTOR:outline}} to see how this affects the heading outline.',
                 
                 // ARIA
                 'aria-allowed-attr': 'Remove unsupported ARIA attributes from this element type. Check the ARIA specification for which attributes are valid for each element.',
@@ -1146,11 +1387,11 @@
                 'th-has-data-cells': 'Ensure table headers (th) actually relate to data cells. Remove empty or irrelevant header cells.',
                 
                 // Structure
-                'region': 'Add landmark regions using HTML5 elements: <main>, <nav>, <aside>, <header>, <footer>. OR use ARIA: <div role="main">, <div role="navigation">.',
-                
-                'page-has-heading-one': 'Add exactly one H1 heading per page. The H1 should describe the main content: <h1>Page Title</h1>',
-                
-                'landmark-one-main': 'Add one <main> element per page: <main><!-- main content here --></main> OR <div role="main">',
+                'region': 'Add landmark regions using HTML5 elements: <main>, <nav>, <aside>, <header>, <footer>. OR use ARIA: <div role="main">, <div role="navigation">. {{TOGGLE_LANDMARKS}} to see what is currently inside vs. outside a landmark.',
+
+                'page-has-heading-one': 'Add exactly one H1 heading per page. The H1 should describe the main content: <h1>Page Title</h1>. {{OPEN_INSPECTOR:outline}} to see the full heading outline.',
+
+                'landmark-one-main': 'Add one <main> element per page: <main><!-- main content here --></main> OR <div role="main">. {{TOGGLE_LANDMARKS}} to see all landmarks on the page.',
                 
                 // Lists
                 'list': 'Use proper list markup. Wrap list items in <ul> or <ol>: <ul><li>Item 1</li><li>Item 2</li></ul>',
@@ -1160,7 +1401,7 @@
                 // Focus and Keyboard
                 'focus-order-semantics': 'Use semantic HTML elements (button, a, input) instead of div/span with click handlers. This ensures proper keyboard focus order.',
                 
-                'tabindex': 'Remove positive tabindex values (tabindex="1", "2", etc). Use tabindex="0" to make elements focusable or tabindex="-1" to remove from tab order.',
+                'tabindex': 'Remove positive tabindex values (tabindex="1", "2", etc). Use tabindex="0" to make elements focusable or tabindex="-1" to remove from tab order. {{TOGGLE_TAB_ORDER}} to see the actual focus order on the page.',
                 
                 // Language
                 'html-has-lang': 'Add language attribute to html element: <html lang="en"> or <html lang="es"> for Spanish, etc.',
@@ -1184,7 +1425,7 @@
                 
                 'frame-title': 'Add descriptive title to iframe: <iframe title="Customer feedback form" src="..."></iframe>',
                 
-                'object-alt': 'Add alternative text to object elements: <object data="chart.svg" type="image/svg+xml">Sales chart showing 20% increase</object>',
+                'object-alt': 'Add alternative text to <object> elements via inner content: <object data="chart.svg" type="image/svg+xml">Sales chart showing 20% increase</object>. {{OPEN_INSPECTOR:alt}} to review every visual element\'s alt text.',
                 
                 'scope-attr-valid': 'Use valid scope attribute values on table headers: scope="col" for column headers, scope="row" for row headers.',
                 
@@ -3897,7 +4138,7 @@
                                     <div id="uw-a11y-inspector-panel-contrast" class="uw-a11y-inspector-detail-panel" hidden>
                                         <div class="uw-a11y-inspector-section">
                                             <h4>Contrast Checker</h4>
-                                            <p>Click <strong>Pick element</strong> and choose any text on the page — both the foreground and background colors will fill in automatically. For elements over a CSS gradient, the worst-case gradient stop within the text region is sampled. You can also edit the hex values directly or use the swatches to test arbitrary color pairs.</p>
+                                            <p>Click <strong>Pick element</strong> and choose any text on the page — both the foreground and background colors will fill in automatically. For elements over a CSS gradient, the worst-case gradient stop within the text region is sampled. You can also edit the hex values directly or click either color chip to open a picker.</p>
                                             <div class="uw-a11y-contrast-controls-row uw-a11y-contrast-pick-row">
                                                 <button type="button" id="uw-a11y-contrast-pick-element" class="uw-a11y-btn uw-a11y-btn-secondary">
                                                     <svg class="feather feather-target" fill="none" height="14" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
@@ -3910,7 +4151,6 @@
                                                         <span class="uw-a11y-contrast-field-label">Foreground (text)</span>
                                                     </div>
                                                     <div class="uw-a11y-contrast-input-row">
-                                                        <span class="uw-a11y-contrast-swatch" id="uw-a11y-contrast-swatch-fg" aria-hidden="true"></span>
                                                         <input type="color" id="uw-a11y-contrast-color-fg" class="uw-a11y-contrast-color" value="#000000" aria-label="Foreground color picker">
                                                         <input type="text" id="uw-a11y-contrast-hex-fg" class="uw-a11y-contrast-hex" value="#000000" spellcheck="false" autocomplete="off" aria-label="Foreground hex value">
                                                     </div>
@@ -3920,7 +4160,6 @@
                                                         <span class="uw-a11y-contrast-field-label">Background</span>
                                                     </div>
                                                     <div class="uw-a11y-contrast-input-row">
-                                                        <span class="uw-a11y-contrast-swatch" id="uw-a11y-contrast-swatch-bg" aria-hidden="true"></span>
                                                         <input type="color" id="uw-a11y-contrast-color-bg" class="uw-a11y-contrast-color" value="#ffffff" aria-label="Background color picker">
                                                         <input type="text" id="uw-a11y-contrast-hex-bg" class="uw-a11y-contrast-hex" value="#ffffff" spellcheck="false" autocomplete="off" aria-label="Background hex value">
                                                     </div>
@@ -3964,11 +4203,77 @@
 
                         <div id="uw-a11y-view-about" class="uw-a11y-view" hidden>
                             <div class="uw-a11y-about">
-                                <h3>About Pinpoint</h3>
-                                <p>Version: <strong>${this.version}</strong> · Engine: axe-core v${this.getAxeVersion ? (this.getAxeVersion() || 'unknown') : 'unknown'}</p>
-                                <p>Pinpoint Accessibility Checker helps quickly find accessibility issues and best-practice improvements, pairing automated results with guidance.</p>
-                                <p><a href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker" target="_blank" rel="noopener noreferrer">Project on GitHub</a> | <a href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a> | <a href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/releases" target="_blank" rel="noopener noreferrer">Changelog</a></p>
-                                
+                                <div class="uw-a11y-about-hero">
+                                    <div class="uw-a11y-about-hero-bg" aria-hidden="true">
+                                        <span class="uw-a11y-about-glow uw-a11y-about-glow-a"></span>
+                                        <span class="uw-a11y-about-glow uw-a11y-about-glow-b"></span>
+                                        <span class="uw-a11y-about-glow uw-a11y-about-glow-c"></span>
+                                    </div>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="uw-a11y-about-logo" viewBox="0 0 404 404" fill="none" aria-hidden="true">
+                                        <path fill="url(#uw-a11y-about-gA)" fill-rule="evenodd" d="M201 349c87.261 0 158-70.739 158-158S288.261 33 201 33 43 103.739 43 191s70.739 158 158 158Zm0 24c100.516 0 182-81.484 182-182S301.516 9 201 9 19 90.484 19 191s81.484 182 182 182Z" clip-rule="evenodd"/>
+                                        <path fill="url(#uw-a11y-about-gB)" fill-rule="evenodd" d="M200.5 302c61.58 0 111.5-49.92 111.5-111.5S262.08 79 200.5 79 89 128.92 89 190.5 138.92 302 200.5 302Zm0 24c74.835 0 135.5-60.665 135.5-135.5C336 115.665 275.335 55 200.5 55 125.665 55 65 115.665 65 190.5 65 265.335 125.665 326 200.5 326Z" clip-rule="evenodd"/>
+                                        <defs>
+                                            <linearGradient id="uw-a11y-about-gA" x1="78.771" x2="324.572" y1="51.982" y2="313.9" gradientUnits="userSpaceOnUse"><stop stop-color="#7435CD"/><stop offset="1" stop-color="#33BFF1"/></linearGradient>
+                                            <linearGradient id="uw-a11y-about-gB" x1="109.5" x2="292.5" y1="87" y2="282" gradientUnits="userSpaceOnUse"><stop stop-color="#9A35CD"/><stop offset="1" stop-color="#33D1F1"/></linearGradient>
+                                        </defs>
+                                    </svg>
+                                    <div class="uw-a11y-about-wordmark">Pinpoint</div>
+                                    <div class="uw-a11y-about-tagline">Accessibility Checker</div>
+                                    <p class="uw-a11y-about-blurb">Find accessibility issues and best-practice improvements fast — automated results paired with rule-specific guidance.</p>
+                                </div>
+
+                                <div class="uw-a11y-about-stats">
+                                    <div class="uw-a11y-about-stat">
+                                        <span class="uw-a11y-about-stat-label">Version</span>
+                                        <span class="uw-a11y-about-stat-value">${this.escapeHtmlContent(this.version || '')}</span>
+                                    </div>
+                                    <div class="uw-a11y-about-stat">
+                                        <span class="uw-a11y-about-stat-label">Engine</span>
+                                        <span class="uw-a11y-about-stat-value">axe-core ${this.escapeHtmlContent('v' + (this.getAxeVersion ? (this.getAxeVersion() || 'unknown') : 'unknown'))}</span>
+                                    </div>
+                                    <div class="uw-a11y-about-stat">
+                                        <span class="uw-a11y-about-stat-label">Standard</span>
+                                        <span class="uw-a11y-about-stat-value">WCAG 2.1 / 2.2</span>
+                                    </div>
+                                </div>
+
+                                <div class="uw-a11y-about-features">
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64"/></svg>
+                                        <span>Powered by axe-core, the industry-standard rule engine</span>
+                                    </div>
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+                                        <span>Built-in inspectors for contrast, color blindness, links, alt text, and the page outline</span>
+                                    </div>
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20l9-9-9-9-9 9 9 9z"/><path d="M12 11v6"/></svg>
+                                        <span>Guided "Top things to fix" walkthrough for non-developers</span>
+                                    </div>
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+                                        <span>Score history tracked locally, per URL</span>
+                                    </div>
+                                </div>
+
+                                <div class="uw-a11y-about-actions">
+                                    <a class="uw-a11y-about-action" href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.16c-3.2.7-3.87-1.37-3.87-1.37-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.24 3.34.95.1-.74.4-1.24.72-1.53-2.55-.29-5.24-1.27-5.24-5.67 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17.91-.25 1.89-.38 2.86-.38.97 0 1.95.13 2.86.38 2.18-1.48 3.14-1.17 3.14-1.17.62 1.58.23 2.75.11 3.04.74.8 1.18 1.82 1.18 3.07 0 4.41-2.69 5.38-5.25 5.66.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12c0-6.35-5.15-11.5-11.5-11.5z"/></svg>
+                                        <span>GitHub</span>
+                                    </a>
+                                    <a class="uw-a11y-about-action" href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/issues" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                        <span>Report an issue</span>
+                                    </a>
+                                    <a class="uw-a11y-about-action" href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/releases" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                                        <span>Changelog</span>
+                                    </a>
+                                </div>
+
+                                <div class="uw-a11y-about-credit">
+                                    Made with care by <a href="https://heroicpixel.com" target="_blank" rel="noopener noreferrer">Heroic Pixel</a>
+                                </div>
                             </div>
                         </div>
 
@@ -4724,6 +5029,204 @@
                     width: 18px;
                     height: 18px;
                 }
+
+                /* ── About view ────────────────────────────────────────── */
+                #uw-a11y-panel .uw-a11y-about {
+                    padding: 0 0 24px;
+                }
+                #uw-a11y-panel .uw-a11y-about-hero {
+                    position: relative;
+                    text-align: center;
+                    padding: 36px 24px 28px;
+                    border-radius: 16px;
+                    background: linear-gradient(160deg, #f5f3ff 0%, #eff6ff 50%, #ecfeff 100%);
+                    border: 1px solid rgba(99,102,241,0.15);
+                    overflow: hidden;
+                    margin-bottom: 18px;
+                }
+                #uw-a11y-panel .uw-a11y-about-hero-bg {
+                    position: absolute;
+                    inset: 0;
+                    pointer-events: none;
+                    filter: blur(48px);
+                    opacity: 0.55;
+                }
+                #uw-a11y-panel .uw-a11y-about-glow {
+                    position: absolute;
+                    width: 220px;
+                    height: 220px;
+                    border-radius: 50%;
+                }
+                #uw-a11y-panel .uw-a11y-about-glow-a {
+                    top: -60px; left: -40px;
+                    background: radial-gradient(circle, #a78bfa, transparent 65%);
+                }
+                #uw-a11y-panel .uw-a11y-about-glow-b {
+                    top: -40px; right: -60px;
+                    background: radial-gradient(circle, #60a5fa, transparent 65%);
+                }
+                #uw-a11y-panel .uw-a11y-about-glow-c {
+                    bottom: -80px; left: 30%;
+                    background: radial-gradient(circle, #5eead4, transparent 65%);
+                }
+                #uw-a11y-panel .uw-a11y-about-logo {
+                    position: relative;
+                    width: 88px;
+                    height: 88px;
+                    filter: drop-shadow(0 8px 18px rgba(116,53,205,0.25));
+                    margin-bottom: 14px;
+                    animation: uw-a11y-about-float 6s ease-in-out infinite;
+                }
+                @keyframes uw-a11y-about-float {
+                    0%, 100% { transform: translateY(0); }
+                    50%      { transform: translateY(-4px); }
+                }
+                #uw-a11y-panel .uw-a11y-about-wordmark {
+                    position: relative;
+                    font-size: 28px;
+                    font-weight: 800;
+                    letter-spacing: -0.02em;
+                    background: linear-gradient(120deg, #7435CD 0%, #4f46e5 50%, #0891b2 100%);
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    color: transparent;
+                    line-height: 1.1;
+                }
+                #uw-a11y-panel .uw-a11y-about-tagline {
+                    position: relative;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    margin-top: 4px;
+                }
+                #uw-a11y-panel .uw-a11y-about-blurb {
+                    position: relative;
+                    margin: 14px auto 0;
+                    max-width: 380px;
+                    font-size: 13.5px;
+                    line-height: 1.55;
+                    color: #374151;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-stats {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                    margin-bottom: 18px;
+                }
+                #uw-a11y-panel .uw-a11y-about-stat {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    padding: 10px 12px;
+                    background: #fff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+                }
+                #uw-a11y-panel .uw-a11y-about-stat-label {
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #6b7280;
+                }
+                #uw-a11y-panel .uw-a11y-about-stat-value {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #111827;
+                    word-break: break-word;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-features {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    margin-bottom: 18px;
+                }
+                #uw-a11y-panel .uw-a11y-about-feature {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 10px;
+                    padding: 10px 12px;
+                    background: #ffffff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    font-size: 13px;
+                    line-height: 1.45;
+                    color: #1f2937;
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-about-feature:hover {
+                    border-color: rgba(99,102,241,0.45);
+                    box-shadow: 0 4px 12px rgba(99,102,241,0.08);
+                }
+                #uw-a11y-panel .uw-a11y-about-feature svg {
+                    width: 18px;
+                    height: 18px;
+                    flex-shrink: 0;
+                    color: #6366f1;
+                    margin-top: 1px;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-actions {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                    margin-bottom: 16px;
+                }
+                #uw-a11y-panel .uw-a11y-about-action {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    padding: 14px 8px;
+                    background: #ffffff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    text-decoration: none;
+                    color: #111827;
+                    font-size: 12px;
+                    font-weight: 600;
+                    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-about-action:hover,
+                #uw-a11y-panel .uw-a11y-about-action:focus-visible {
+                    transform: translateY(-1px);
+                    border-color: rgba(79,70,229,0.55);
+                    box-shadow: 0 6px 14px rgba(79,70,229,0.12);
+                    background: #fafaff;
+                    outline: none;
+                }
+                #uw-a11y-panel .uw-a11y-about-action svg {
+                    width: 20px;
+                    height: 20px;
+                    color: #4f46e5;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-credit {
+                    text-align: center;
+                    font-size: 12px;
+                    color: #6b7280;
+                    padding-top: 6px;
+                }
+                #uw-a11y-panel .uw-a11y-about-credit a {
+                    color: #4f46e5;
+                    font-weight: 600;
+                    text-decoration: none;
+                }
+                #uw-a11y-panel .uw-a11y-about-credit a:hover,
+                #uw-a11y-panel .uw-a11y-about-credit a:focus-visible {
+                    text-decoration: underline;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    #uw-a11y-panel .uw-a11y-about-logo {
+                        animation: none;
+                    }
+                }
                 
                 #uw-a11y-panel #uw-a11y-header h2 {
                     margin: 0;
@@ -4834,98 +5337,94 @@
                 }
                 #uw-a11y-panel .uw-a11y-issue {
                     margin-bottom: 14px;
-                    padding: 16px;
-                    border-left: 3px solid #f0a500;
-                    background: #fdfaf0;
-                    border-radius: 14px;
+                    padding: 16px 16px 14px 18px;
+                    border: 1px solid #e5e7eb;
+                    border-left: 4px solid #d1d5db;
+                    background: #ffffff;
+                    border-radius: 12px;
                     cursor: pointer;
-                    transition: box-shadow 0.2s ease, transform 0.15s ease;
+                    transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
                     position: relative;
                     outline: none;
-
+                    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
                 }
-                
-                /* Hover states for different issue types */
+
+                /* Type-specific accents — neutralized fills, color reserved
+                   for the left border, icon, badge, and learn-more link. */
+                #uw-a11y-panel .uw-a11y-issue.error {
+                    border-left-color: #dc3545;
+                    background: #fffbfb; /* barely-there red — keeps urgency without flooding */
+                }
+                #uw-a11y-panel .uw-a11y-issue.warning {
+                    border-left-color: #f0a500;
+                    background: #ffffff;
+                }
+                #uw-a11y-panel .uw-a11y-issue.info {
+                    border-left-color: #17a2b8;
+                    background: #ffffff;
+                }
+
+                /* Hover — subtle lift; no pastel flood. */
                 #uw-a11y-panel .uw-a11y-issue:hover {
                     transform: translateY(-1px);
-                    border-color: rgba(0,0,0,0.15);
+                    box-shadow: 0 6px 16px rgba(15,23,42,0.08);
+                    border-color: #d1d5db;
                 }
-                
-                #uw-a11y-panel .uw-a11y-issue.error:hover {
-                    background: #f7eaebff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 23, 41, 0.35);
-                    border-color: rgba(182, 25, 41, 0.96);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.warning:hover {
-                    background: #faf6e9ff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 133, 23, 0.35);
-                    border-color: rgba(255, 193, 7, 0.87);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.info:hover {
-                    background: #f5f9feff;
-                    box-shadow: 0 4px 20px 0 rgba(23, 104, 211, 0.35);
-                    border-color: rgba(23, 162, 184, 0.93);
-                    cursor: default;
-                }
-                
-                /* Focus states for keyboard accessibility */
+                #uw-a11y-panel .uw-a11y-issue.error:hover  { border-left-color: #dc3545; box-shadow: 0 6px 16px rgba(220,53,69,0.18); }
+                #uw-a11y-panel .uw-a11y-issue.warning:hover { border-left-color: #f0a500; box-shadow: 0 6px 16px rgba(240,165,0,0.18); }
+                #uw-a11y-panel .uw-a11y-issue.info:hover    { border-left-color: #17a2b8; box-shadow: 0 6px 16px rgba(23,162,184,0.18); cursor: default; }
+
+                /* Focus — keep colored outlines for keyboard users. */
                 #uw-a11y-panel .uw-a11y-issue:focus {
                     outline: 3px solid #007cba;
                     outline-offset: 2px;
                     transform: translateY(-1px);
                     z-index: 1;
                 }
-                
-                #uw-a11y-panel .uw-a11y-issue.error:focus {
-                    outline-color: #dc3545;
-                    background: #fbe6e8ff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 23, 42, 0.38);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.warning:focus {
-                    outline-color: #ffc107;
-                    background: #fbf5e1ff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 133, 23, 0.35);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.info:focus {
-                    outline-color: #17a2b8;
-                    background: #dcedffff;
-                    box-shadow: 0 4px 20px 0 rgba(23, 104, 211, 0.35);
-                }
-                
-                /* Active/pressed states */
+                #uw-a11y-panel .uw-a11y-issue.error:focus   { outline-color: #dc3545; }
+                #uw-a11y-panel .uw-a11y-issue.warning:focus { outline-color: #f0a500; }
+                #uw-a11y-panel .uw-a11y-issue.info:focus    { outline-color: #17a2b8; }
+
                 #uw-a11y-panel .uw-a11y-issue:active {
                     transform: translateY(0px);
                     transition: transform 0.1s ease;
                 }
-                
-                /* Enhanced checked state hover */
-                #uw-a11y-panel .uw-a11y-issue.checked:hover {
-                    background: #c3e6cb !important;
-                    transform: translateY(-1px);
+
+                /* Verified manual-review items — green left bar + faint tint. */
+                #uw-a11y-panel .uw-a11y-issue.checked {
+                    border-left-color: #28a745;
+                    background: #f4faf5;
                 }
-                
+                #uw-a11y-panel .uw-a11y-issue.checked:hover {
+                    box-shadow: 0 6px 16px rgba(40,167,69,0.18);
+                }
                 #uw-a11y-panel .uw-a11y-issue.checked:focus {
                     outline-color: #28a745;
-                    background: #c3e6cb !important;
                 }
-               #uw-a11y-panel .uw-a11y-issue.error {
-                    border-left-color: #e53e51;
-                    background: #fdf4f5;
-                    box-shadow: 0 2px 12px rgba(211, 23, 41, 0.1);
+
+                /* Severity badge — small pill that carries the type label. */
+                #uw-a11y-panel .uw-a11y-issue-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    flex-shrink: 0;
+                    margin-left: auto;
+                    padding: 2px 9px;
+                    border-radius: 999px;
+                    font-size: 10.5px;
+                    font-weight: 700;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    line-height: 1.6;
+                    border: 1px solid transparent;
+                    white-space: nowrap;
                 }
-                #uw-a11y-panel .uw-a11y-issue.warning {
-                    border-left-color: #f0a500;
-                    background: #fdfaf0;
-                    box-shadow: 0 2px 12px rgba(211, 133, 23, 0.1);
-                }
-                #uw-a11y-panel .uw-a11y-issue.info {
-                    border-left-color: #17a2b8;
-                    background: #f3fafc;
-                    box-shadow: 0 2px 12px rgba(23, 104, 211, 0.1);
+                #uw-a11y-panel .uw-a11y-issue-badge.type-error   { background: rgba(220,53,69,0.10);  color: #b91c1c; border-color: rgba(220,53,69,0.30); }
+                #uw-a11y-panel .uw-a11y-issue-badge.type-warning { background: rgba(240,165,0,0.12);  color: #92590a; border-color: rgba(240,165,0,0.35); }
+                #uw-a11y-panel .uw-a11y-issue-badge.type-info    { background: rgba(23,162,184,0.10); color: #0c6478; border-color: rgba(23,162,184,0.32); }
+                #uw-a11y-panel .uw-a11y-issue.checked .uw-a11y-issue-badge.type-warning {
+                    background: rgba(40,167,69,0.10);
+                    color: #166534;
+                    border-color: rgba(40,167,69,0.32);
                 }
                 #uw-a11y-panel .uw-a11y-issue h4 {
                     margin: 0 0 10px 0;
@@ -5067,13 +5566,15 @@
                 #uw-a11y-panel .uw-a11y-issue .how-to-fix {
                     margin-top: 12px;
                     border-radius: 10px;
-                    background: rgba(255,255,255,0.72);
+                    background: #ffffff;
                     padding: 12px 14px;
                     font-size: 13px;
                     line-height: 1.55;
                     color: #1a1a2e;
                     font-weight: 400;
+                    border: 1px solid #e5e7eb;
                     border-left: 3px solid rgb(51, 141, 214);
+                    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
                     display: flex;
                     align-items: flex-start;
                     gap: 10px;
@@ -5167,13 +5668,13 @@
                     cursor: pointer;
                 }
                 #uw-a11y-panel .uw-a11y-issue.checked {
-                    opacity: 0.7;
-                    background: #d4edda !important;
+                    opacity: 0.85;
+                    background: #f4faf5 !important;
                     border-left-color: #28a745 !important;
                 }
                 #uw-a11y-panel .uw-a11y-issue.checked .uw-a11y-manual-check {
-                    background: #d4edda;
-                    border-color: #c3e6cb;
+                    background: rgba(40,167,69,0.08);
+                    border-color: rgba(40,167,69,0.25);
                 }
                 #uw-a11y-panel .uw-a11y-check-label {
                     color: #155724;
@@ -5388,21 +5889,48 @@
                     flex: 1;
                     line-height: 1.35;
                 }
-                #uw-a11y-panel .uw-a11y-preset-hint-apply {
+                #uw-a11y-panel .uw-a11y-preset-hint-actions {
                     flex-shrink: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    align-items: stretch;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-apply {
                     background: #198754;
                     color: #fff;
-                    border: none;
+                    border: 1px solid #198754;
                     border-radius: 6px;
                     padding: 4px 10px;
                     font-size: 12px;
                     font-weight: 600;
                     cursor: pointer;
                     transition: background 0.15s ease;
+                    text-align: center;
+                    white-space: nowrap;
                 }
                 #uw-a11y-panel .uw-a11y-preset-hint-apply:hover,
                 #uw-a11y-panel .uw-a11y-preset-hint-apply:focus-visible {
                     background: #146c43;
+                    outline: none;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-alt {
+                    background: transparent;
+                    color: #146c43;
+                    border: 1px solid rgba(25,135,84,0.45);
+                    border-radius: 6px;
+                    padding: 3px 10px;
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.15s ease, border-color 0.15s ease;
+                    text-align: center;
+                    white-space: nowrap;
+                }
+                #uw-a11y-panel .uw-a11y-preset-hint-alt:hover,
+                #uw-a11y-panel .uw-a11y-preset-hint-alt:focus-visible {
+                    background: rgba(25,135,84,0.12);
+                    border-color: #146c43;
                     outline: none;
                 }
                 #uw-a11y-panel .uw-a11y-preset-hint-dismiss {
@@ -5691,6 +6219,34 @@
         
         #uw-a11y-panel .how-to-fix code:not(:last-child) {
             margin-right: 2px;
+        }
+
+        #uw-a11y-panel .uw-a11y-inline-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(79,70,229,0.10);
+            color: #4f46e5;
+            border: 1px solid rgba(79,70,229,0.30);
+            border-radius: 999px;
+            padding: 2px 9px;
+            font-size: 11.5px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            line-height: 1.4;
+            margin: 0 2px;
+            vertical-align: baseline;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        #uw-a11y-panel .uw-a11y-inline-action:hover,
+        #uw-a11y-panel .uw-a11y-inline-action:focus-visible {
+            background: rgba(79,70,229,0.18);
+            border-color: rgba(79,70,229,0.55);
+            outline: none;
+        }
+        #uw-a11y-panel .uw-a11y-inline-action svg {
+            flex-shrink: 0;
         }
         
         /* Score explanation modal styles */
@@ -6396,16 +6952,6 @@
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-
-        .uw-a11y-contrast-swatch {
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            border: 1px solid #d1d5db;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6);
-            flex-shrink: 0;
-            background: #fff;
         }
 
         .uw-a11y-contrast-color {
@@ -8875,6 +9421,74 @@
             }
         },
 
+        // Public entry points for inline-action buttons inside recommendations.
+        // Each button switches to the Inspector and opens the relevant tool
+        // (outline, links, alt, cvd, contrast), or toggles an on-page overlay
+        // (landmarks, tabOrder, focusIndicators). See formatRecommendation()
+        // for the sentinel patterns that produce these buttons.
+        openContrastChecker: function(node) {
+            try {
+                this.showView('inspector');
+                this.openInspectorDetail('contrast');
+                if (node) this.prefillContrastFromNode(node);
+            } catch (e) {
+                console.warn('[Pinpoint] openContrastChecker failed:', e && e.message);
+            }
+        },
+
+        openInspectorTool: function(name) {
+            try {
+                const valid = { outline: 1, links: 1, cvd: 1, alt: 1, contrast: 1 };
+                if (!valid[name]) return;
+                this.showView('inspector');
+                this.openInspectorDetail(name);
+            } catch (e) {
+                console.warn('[Pinpoint] openInspectorTool failed:', e && e.message);
+            }
+        },
+
+        toggleVisualization: function(name) {
+            try {
+                if (name === 'landmarks' && typeof this.toggleLandmarkStructureVisualization === 'function') {
+                    this.toggleLandmarkStructureVisualization();
+                } else if (name === 'tabOrder' && typeof this.toggleTabOrderVisualization === 'function') {
+                    this.toggleTabOrderVisualization();
+                } else if (name === 'focusIndicators' && typeof this.toggleFocusIndicatorsVisualization === 'function') {
+                    this.toggleFocusIndicatorsVisualization();
+                }
+            } catch (e) {
+                console.warn('[Pinpoint] toggleVisualization failed:', e && e.message);
+            }
+        },
+
+        prefillContrastFromNode: function(node) {
+            try {
+                if (!node) return;
+                const el = (node.nodeType === 1) ? node : this.getElementFromNode(node);
+                if (!el) return;
+                const cs = window.getComputedStyle(el);
+                const fg = this.rgbStringToHex(cs.color);
+                if (!fg) return;
+                this.contrastCheckerState = this.contrastCheckerState || { fg: '#000000', bg: '#ffffff', ratio: null };
+                this.contrastCheckerState.fg = fg;
+                const root = this.shadowRoot;
+                if (!root) return;
+                const fgInput = root.getElementById('uw-a11y-contrast-hex-fg');
+                const fgColor = root.getElementById('uw-a11y-contrast-color-fg');
+                if (fgInput) fgInput.value = fg.toUpperCase();
+                if (fgColor) fgColor.value = fg.toLowerCase();
+                if (typeof this.recomputeContrastResult === 'function') this.recomputeContrastResult();
+            } catch (_) { /* best-effort */ }
+        },
+
+        rgbStringToHex: function(rgb) {
+            if (!rgb) return '';
+            const m = rgb.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+            if (!m) return '';
+            const toHex = n => Number(n).toString(16).padStart(2, '0');
+            return '#' + toHex(m[1]) + toHex(m[2]) + toHex(m[3]);
+        },
+
         openInspectorDetail: function(panelId) {
             const titles = {
                 outline: 'Page outline',
@@ -9224,11 +9838,6 @@
             const root = this.shadowRoot;
             const state = this.contrastCheckerState;
             if (!root || !state) return;
-
-            const swatchFg = root.getElementById('uw-a11y-contrast-swatch-fg');
-            const swatchBg = root.getElementById('uw-a11y-contrast-swatch-bg');
-            if (swatchFg) swatchFg.style.background = state.fg;
-            if (swatchBg) swatchBg.style.background = state.bg;
 
             const preview = root.getElementById('uw-a11y-contrast-preview');
             if (preview) {
@@ -11309,6 +11918,31 @@
                         </label>
                     </div>
 
+                    <div class="uw-a11y-setting-card">
+                        <div class="uw-a11y-setting-label">Issue Highlight</div>
+                        <div class="uw-a11y-helptext" style="margin-bottom:10px;">How elements look when you click an issue, and how long the highlight stays.</div>
+                        <div class="uw-a11y-settings-2col">
+                            <div>
+                                <label for="uw-a11y-highlight-style" class="uw-a11y-setting-label">Style</label>
+                                <select id="uw-a11y-highlight-style" class="uw-a11y-input">
+                                    ${Object.entries(this.getHighlightStylePresets()).map(([key, p]) => {
+                                        const sel = this.getHighlightStyle() === key ? ' selected' : '';
+                                        return `<option value="${this.escapeHtmlAttr(key)}"${sel}>${this.escapeHtmlContent(p.label)}</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="uw-a11y-highlight-duration" class="uw-a11y-setting-label">Duration</label>
+                                <select id="uw-a11y-highlight-duration" class="uw-a11y-input">
+                                    ${this.getHighlightDurationOptions().map(o => {
+                                        const sel = this.getHighlightDuration() === o.value ? ' selected' : '';
+                                        return `<option value="${o.value}"${sel}>${this.escapeHtmlContent(o.label)}</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <p class="uw-a11y-section-divider">Results</p>
 
                     <div class="uw-a11y-setting-card">
@@ -11520,6 +12154,22 @@
                     } else {
                         localStorage.setItem('uw-a11y-sounds', 'off');
                     }
+                });
+            }
+
+            // Highlight style + duration — apply instantly, no re-scan needed
+            const hlStyleSel = this.shadowRoot.getElementById('uw-a11y-highlight-style');
+            if (hlStyleSel) {
+                hlStyleSel.addEventListener('change', () => {
+                    this.setHighlightStyle(hlStyleSel.value);
+                    this.playSound('ui');
+                });
+            }
+            const hlDurationSel = this.shadowRoot.getElementById('uw-a11y-highlight-duration');
+            if (hlDurationSel) {
+                hlDurationSel.addEventListener('change', () => {
+                    this.setHighlightDuration(parseInt(hlDurationSel.value, 10));
+                    this.playSound('ui');
                 });
             }
 
@@ -12579,7 +13229,7 @@
                          id=\"issue-${this.sanitizeHtmlId(ruleId)}\">
                          ${instanceNavigation}
                         <h4>
-                            <span class=\"uw-a11y-issue-header\">${iconSvg}<span class=\"uw-a11y-issue-title\">${this.escapeHtmlContent(firstIssue.title)} ${issueGroup.length > 1 ? `(${issueGroup.length} instances)` : ''}</span></span>
+                            <span class=\"uw-a11y-issue-header\">${iconSvg}<span class=\"uw-a11y-issue-title\">${this.escapeHtmlContent(firstIssue.title)} ${issueGroup.length > 1 ? `(${issueGroup.length} instances)` : ''}</span><span class=\"uw-a11y-issue-badge type-${firstIssue.type}\">${this.getIssueTypeLabel(firstIssue.type, isManualReview && this.isRuleVerified(ruleId))}</span></span>
                         </h4>
                         <div class=\"how-to-fix\"><div class=\"how-to-fix-icon\"><svg viewBox=\"0 0 512 512\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M331.8 224.1c28.29 0 54.88 10.99 74.86 30.97l19.59 19.59c40.01-17.74 71.25-53.3 81.62-96.65c5.725-23.92 5.34-47.08 .2148-68.4c-2.613-10.88-16.43-14.51-24.34-6.604l-68.9 68.9h-75.6V97.2l68.9-68.9c7.912-7.912 4.275-21.73-6.604-24.34c-21.32-5.125-44.48-5.51-68.4 .2148c-55.3 13.23-98.39 60.22-107.2 116.4C224.5 128.9 224.2 137 224.3 145l82.78 82.86C315.2 225.1 323.5 224.1 331.8 224.1zM384 278.6c-23.16-23.16-57.57-27.57-85.39-13.9L191.1 158L191.1 95.99l-127.1-95.99L0 63.1l96 127.1l62.04 .0077l106.7 106.6c-13.67 27.82-9.251 62.23 13.91 85.39l117 117.1c14.62 14.5 38.21 14.5 52.71-.0016l52.75-52.75c14.5-14.5 14.5-38.08-.0016-52.71L384 278.6zM227.9 307L168.7 247.9l-148.9 148.9c-26.37 26.37-26.37 69.08 0 95.45C32.96 505.4 50.21 512 67.5 512s34.54-6.592 47.72-19.78l119.1-119.1C225.5 352.3 222.6 329.4 227.9 307zM64 472c-13.25 0-24-10.75-24-24c0-13.26 10.75-24 24-24S88 434.7 88 448C88 461.3 77.25 472 64 472z\"/></svg></div><div><strong>How to fix:</strong> <span id=\"recommendation-${this.sanitizeHtmlId(ruleId)}\"></span></div></div>
                         ${isManualReview ? `
@@ -13140,6 +13790,20 @@
             if (!guided) return;
             guided.innerHTML = `<div class="uw-a11y-walkthrough" id="uw-a11y-walkthrough"></div>`;
             this.renderWalkthroughStep();
+            // Auto-highlight the first instance on the page so the user
+            // immediately sees what the rule is referring to. Subsequent
+            // instances already auto-highlight via stepWalkthroughInstance.
+            this.highlightCurrentWalkthroughInstance();
+        },
+
+        highlightCurrentWalkthroughInstance: function() {
+            try {
+                if (!this.walkthroughGroups) return;
+                const idx = this.walkthroughIndex || 0;
+                const entry = this.walkthroughGroups[idx];
+                if (!entry || !entry.ruleId) return;
+                this.highlightCurrentInstance(entry.ruleId, true);
+            } catch (_) { /* best-effort */ }
         },
 
         renderWalkthroughStep: function() {
@@ -13295,6 +13959,7 @@
             if (next < 0 || next >= total) return;
             this.walkthroughIndex = next;
             this.renderWalkthroughStep();
+            this.highlightCurrentWalkthroughInstance();
             this.playSound('navigate');
         },
 
@@ -13380,6 +14045,7 @@
                     // content-only ("scope to the guide body"); WP/Drupal/etc.
                     // default to whole-page ("apply preset / exclude chrome").
                     let question;
+                    const hasContentScope = !!(preset.contentScope || '').trim();
                     if (hintMode === 'content') {
                         question = `Looks like a <strong>${this.escapeHtmlContent(presetLabel)}</strong> site. Scope this scan to the ${this.escapeHtmlContent(presetLabel)} content area only?`;
                     } else if ((preset.exclude || '').trim() && !(preset.scope || '').trim()) {
@@ -13387,11 +14053,20 @@
                     } else {
                         question = `Looks like a <strong>${this.escapeHtmlContent(presetLabel)}</strong> site. Apply the matching preset for cleaner results?`;
                     }
+                    // Offer a secondary "Content only" action for content editors
+                    // when the primary action is whole-page and the preset has
+                    // a defined content scope.
+                    const altButton = (hintMode === 'whole' && hasContentScope)
+                        ? `<button type="button" class="uw-a11y-preset-hint-alt" data-preset="${this.escapeHtmlAttr(hintKey)}" data-mode="content" title="Content editor? Scan only the page content, not header/footer/sidebar">Content only</button>`
+                        : '';
                     return `
                         <div id="uw-a11y-preset-hint" role="status" class="uw-a11y-preset-hint" data-preset="${this.escapeHtmlAttr(hintKey)}" data-mode="${this.escapeHtmlAttr(hintMode)}">
                             <svg class="uw-a11y-preset-hint-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                             <span class="uw-a11y-preset-hint-text">${question}</span>
-                            <button type="button" class="uw-a11y-preset-hint-apply" data-preset="${this.escapeHtmlAttr(hintKey)}" data-mode="${this.escapeHtmlAttr(hintMode)}">Apply</button>
+                            <div class="uw-a11y-preset-hint-actions">
+                                <button type="button" class="uw-a11y-preset-hint-apply" data-preset="${this.escapeHtmlAttr(hintKey)}" data-mode="${this.escapeHtmlAttr(hintMode)}">Apply</button>
+                                ${altButton}
+                            </div>
                             <button type="button" class="uw-a11y-preset-hint-dismiss" aria-label="Dismiss platform suggestion" title="Don't show this again on this site">✕</button>
                         </div>
                     `;
@@ -13470,11 +14145,21 @@
             const presetHint = this.shadowRoot.getElementById('uw-a11y-preset-hint');
             if (presetHint) {
                 const applyBtn = presetHint.querySelector('.uw-a11y-preset-hint-apply');
+                const altBtn = presetHint.querySelector('.uw-a11y-preset-hint-alt');
                 const dismissBtn = presetHint.querySelector('.uw-a11y-preset-hint-dismiss');
                 if (applyBtn) applyBtn.addEventListener('click', () => {
                     const key = applyBtn.dataset.preset;
                     if (!key) return;
                     const mode = applyBtn.dataset.mode === 'content' ? 'content' : 'whole';
+                    this.setActivePresetForCurrentHost(key, mode);
+                    this.playSound('verify');
+                    this.scoreAnimationPlayed = false;
+                    this.runAxeChecks();
+                });
+                if (altBtn) altBtn.addEventListener('click', () => {
+                    const key = altBtn.dataset.preset;
+                    if (!key) return;
+                    const mode = altBtn.dataset.mode === 'content' ? 'content' : 'whole';
                     this.setActivePresetForCurrentHost(key, mode);
                     this.playSound('verify');
                     this.scoreAnimationPlayed = false;
@@ -13593,6 +14278,15 @@
 
         // Return a consistent SVG icon for a given issue type
         // variant: 'issue' | 'summary' (controls class names)
+        // Short label shown on the severity badge in the rule-group header.
+        getIssueTypeLabel: function(type, isVerified) {
+            if (isVerified) return 'Verified';
+            if (type === 'error') return 'Error';
+            if (type === 'warning') return 'Manual review';
+            if (type === 'info') return 'Best practice';
+            return '';
+        },
+
         getIssueTypeIcon: function(type, variant) {
             const cls = variant === 'issue' ? 'uw-a11y-issue-icon' : '';
             const base = (extra) => extra ? `${cls} ${extra}` : cls;
@@ -13922,16 +14616,45 @@
                     }
                 }, 700);
 
-                // Cleanup highlight and temporary tabindex after a delay
-                setTimeout(() => {
+                // Cleanup highlight + revealed-ancestor undo after the
+                // user-configured duration. duration === 0 means "persist
+                // until the user picks another issue or clicks elsewhere".
+                if (this._highlightCleanupTimer) {
+                    clearTimeout(this._highlightCleanupTimer);
+                    this._highlightCleanupTimer = null;
+                }
+                if (this._highlightAwayHandler) {
+                    document.removeEventListener('mousedown', this._highlightAwayHandler, true);
+                    this._highlightAwayHandler = null;
+                }
+
+                const cleanup = () => {
                     if (el && el.classList) el.classList.remove('uw-a11y-highlight');
                     if (el && el.hasAttribute && el.hasAttribute('data-uw-a11y-temp-tabindex')) {
                         el.removeAttribute('tabindex');
                         el.removeAttribute('data-uw-a11y-temp-tabindex');
                     }
-                    // Re-hide previously hidden ancestors
                     try { if (typeof cleanupReveal === 'function') cleanupReveal(); } catch (_) { /* ignore */ }
-                }, 3000);
+                };
+
+                const duration = this.getHighlightDuration();
+                if (duration > 0) {
+                    this._highlightCleanupTimer = setTimeout(cleanup, duration);
+                } else {
+                    // Persist until user clicks somewhere that isn't the
+                    // highlighted element itself or the Pinpoint UI.
+                    this._highlightAwayHandler = (ev) => {
+                        const t = ev.target;
+                        if (!t) return;
+                        if (el && (t === el || (el.contains && el.contains(t)))) return;
+                        const container = document.getElementById('uw-a11y-container');
+                        if (container && (t === container || container.contains(t))) return;
+                        document.removeEventListener('mousedown', this._highlightAwayHandler, true);
+                        this._highlightAwayHandler = null;
+                        cleanup();
+                    };
+                    document.addEventListener('mousedown', this._highlightAwayHandler, true);
+                }
             }
         },
 

@@ -59,11 +59,8 @@
                 const globalStyle = document.createElement('style');
                 globalStyle.id = 'uw-a11y-global-styles';
                 globalStyle.textContent = `
-                    .uw-a11y-highlight {
-                        background: yellow !important;
-                        border: 2px solid red !important;
-                        box-shadow: 0 0 0 2px yellow !important;
-                    }
+                    /* The .uw-a11y-highlight rule is injected by applyHighlightStyles()
+                       into a separate stylesheet so users can change it at runtime. */
                     /* Temporarily reveal hidden ancestors during highlight */
                     [data-uw-a11y-reveal] {
                         display: block !important;
@@ -90,7 +87,89 @@
             }
 
             this.applyDockPosition(this.getDockPosition());
+            this.applyHighlightStyles();
         },
+
+        // ── Element highlight: user-customizable style + duration ───────────
+        // Style presets are CSS rule bodies applied to .uw-a11y-highlight.
+        // Duration is in milliseconds, or 0 meaning "stay until the user
+        // selects another issue or clicks elsewhere on the page".
+        getHighlightStylePresets: function() {
+            return {
+                classic: {
+                    label: 'Classic — yellow fill, red border',
+                    css: 'background: yellow !important; border: 2px solid red !important; box-shadow: 0 0 0 2px yellow !important;'
+                },
+                outline: {
+                    label: 'Outline — red ring, no fill',
+                    css: 'outline: 3px solid #dc3545 !important; outline-offset: 2px !important; box-shadow: 0 0 0 6px rgba(220,53,69,0.18) !important;'
+                },
+                glow: {
+                    label: 'Glow — soft blue halo',
+                    css: 'box-shadow: 0 0 0 3px rgba(59,130,246,0.85), 0 0 0 8px rgba(59,130,246,0.30) !important; outline: 1px solid rgba(59,130,246,0.95) !important; outline-offset: 1px !important;'
+                },
+                dashed: {
+                    label: 'Dashed — animated dashed border',
+                    css: 'outline: 2px dashed #dc3545 !important; outline-offset: 3px !important; animation: uw-a11y-highlight-dash 0.6s linear infinite !important;'
+                },
+                contrast: {
+                    label: 'High contrast — black background, yellow ring',
+                    css: 'background: #000 !important; color: #fff !important; box-shadow: 0 0 0 3px #ffeb3b, 0 0 0 6px #000 !important;'
+                }
+            };
+        },
+
+        getHighlightDurationOptions: function() {
+            return [
+                { value: 3000,  label: '3 seconds' },
+                { value: 5000,  label: '5 seconds (default)' },
+                { value: 10000, label: '10 seconds' },
+                { value: 0,     label: 'Until I click away or pick another issue' }
+            ];
+        },
+
+        getHighlightStyle: function() {
+            const s = this.loadSettings();
+            const presets = this.getHighlightStylePresets();
+            return presets[s.highlightStyle] ? s.highlightStyle : 'classic';
+        },
+
+        setHighlightStyle: function(name) {
+            const s = this.loadSettings();
+            s.highlightStyle = name;
+            this.saveSettings(s);
+            this.applyHighlightStyles();
+        },
+
+        getHighlightDuration: function() {
+            const s = this.loadSettings();
+            const allowed = new Set(this.getHighlightDurationOptions().map(o => o.value));
+            const v = (typeof s.highlightDuration === 'number') ? s.highlightDuration : 5000;
+            return allowed.has(v) ? v : 5000;
+        },
+
+        setHighlightDuration: function(ms) {
+            const s = this.loadSettings();
+            s.highlightDuration = ms;
+            this.saveSettings(s);
+        },
+
+        applyHighlightStyles: function() {
+            const styleId = 'uw-a11y-highlight-styles';
+            let el = document.getElementById(styleId);
+            if (!el) {
+                el = document.createElement('style');
+                el.id = styleId;
+                document.head.appendChild(el);
+            }
+            const preset = this.getHighlightStylePresets()[this.getHighlightStyle()];
+            const css = preset ? preset.css : this.getHighlightStylePresets().classic.css;
+            el.textContent =
+                '@keyframes uw-a11y-highlight-dash { to { outline-offset: 8px; } }\n' +
+                '.uw-a11y-highlight { ' + css + ' }';
+        },
+
+        getHighlightPosition: function() { /* unused — placeholder for future expansion */ return null; },
 
         getDockPosition: function() {
             const s = this.loadSettings();
@@ -4150,11 +4229,77 @@
 
                         <div id="uw-a11y-view-about" class="uw-a11y-view" hidden>
                             <div class="uw-a11y-about">
-                                <h3>About Pinpoint</h3>
-                                <p>Version: <strong>${this.version}</strong> · Engine: axe-core v${this.getAxeVersion ? (this.getAxeVersion() || 'unknown') : 'unknown'}</p>
-                                <p>Pinpoint Accessibility Checker helps quickly find accessibility issues and best-practice improvements, pairing automated results with guidance.</p>
-                                <p><a href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker" target="_blank" rel="noopener noreferrer">Project on GitHub</a> | <a href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a> | <a href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/releases" target="_blank" rel="noopener noreferrer">Changelog</a></p>
-                                
+                                <div class="uw-a11y-about-hero">
+                                    <div class="uw-a11y-about-hero-bg" aria-hidden="true">
+                                        <span class="uw-a11y-about-glow uw-a11y-about-glow-a"></span>
+                                        <span class="uw-a11y-about-glow uw-a11y-about-glow-b"></span>
+                                        <span class="uw-a11y-about-glow uw-a11y-about-glow-c"></span>
+                                    </div>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="uw-a11y-about-logo" viewBox="0 0 404 404" fill="none" aria-hidden="true">
+                                        <path fill="url(#uw-a11y-about-gA)" fill-rule="evenodd" d="M201 349c87.261 0 158-70.739 158-158S288.261 33 201 33 43 103.739 43 191s70.739 158 158 158Zm0 24c100.516 0 182-81.484 182-182S301.516 9 201 9 19 90.484 19 191s81.484 182 182 182Z" clip-rule="evenodd"/>
+                                        <path fill="url(#uw-a11y-about-gB)" fill-rule="evenodd" d="M200.5 302c61.58 0 111.5-49.92 111.5-111.5S262.08 79 200.5 79 89 128.92 89 190.5 138.92 302 200.5 302Zm0 24c74.835 0 135.5-60.665 135.5-135.5C336 115.665 275.335 55 200.5 55 125.665 55 65 115.665 65 190.5 65 265.335 125.665 326 200.5 326Z" clip-rule="evenodd"/>
+                                        <defs>
+                                            <linearGradient id="uw-a11y-about-gA" x1="78.771" x2="324.572" y1="51.982" y2="313.9" gradientUnits="userSpaceOnUse"><stop stop-color="#7435CD"/><stop offset="1" stop-color="#33BFF1"/></linearGradient>
+                                            <linearGradient id="uw-a11y-about-gB" x1="109.5" x2="292.5" y1="87" y2="282" gradientUnits="userSpaceOnUse"><stop stop-color="#9A35CD"/><stop offset="1" stop-color="#33D1F1"/></linearGradient>
+                                        </defs>
+                                    </svg>
+                                    <div class="uw-a11y-about-wordmark">Pinpoint</div>
+                                    <div class="uw-a11y-about-tagline">Accessibility Checker</div>
+                                    <p class="uw-a11y-about-blurb">Find accessibility issues and best-practice improvements fast — automated results paired with rule-specific guidance.</p>
+                                </div>
+
+                                <div class="uw-a11y-about-stats">
+                                    <div class="uw-a11y-about-stat">
+                                        <span class="uw-a11y-about-stat-label">Version</span>
+                                        <span class="uw-a11y-about-stat-value">${this.escapeHtmlContent(this.version || '')}</span>
+                                    </div>
+                                    <div class="uw-a11y-about-stat">
+                                        <span class="uw-a11y-about-stat-label">Engine</span>
+                                        <span class="uw-a11y-about-stat-value">axe-core ${this.escapeHtmlContent('v' + (this.getAxeVersion ? (this.getAxeVersion() || 'unknown') : 'unknown'))}</span>
+                                    </div>
+                                    <div class="uw-a11y-about-stat">
+                                        <span class="uw-a11y-about-stat-label">Standard</span>
+                                        <span class="uw-a11y-about-stat-value">WCAG 2.1 / 2.2</span>
+                                    </div>
+                                </div>
+
+                                <div class="uw-a11y-about-features">
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c2.39 0 4.68.94 6.36 2.64"/></svg>
+                                        <span>Powered by axe-core, the industry-standard rule engine</span>
+                                    </div>
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+                                        <span>Built-in inspectors for contrast, color blindness, links, alt text, and the page outline</span>
+                                    </div>
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20l9-9-9-9-9 9 9 9z"/><path d="M12 11v6"/></svg>
+                                        <span>Guided "Top things to fix" walkthrough for non-developers</span>
+                                    </div>
+                                    <div class="uw-a11y-about-feature">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+                                        <span>Score history tracked locally, per URL</span>
+                                    </div>
+                                </div>
+
+                                <div class="uw-a11y-about-actions">
+                                    <a class="uw-a11y-about-action" href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.16c-3.2.7-3.87-1.37-3.87-1.37-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.24 3.34.95.1-.74.4-1.24.72-1.53-2.55-.29-5.24-1.27-5.24-5.67 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17.91-.25 1.89-.38 2.86-.38.97 0 1.95.13 2.86.38 2.18-1.48 3.14-1.17 3.14-1.17.62 1.58.23 2.75.11 3.04.74.8 1.18 1.82 1.18 3.07 0 4.41-2.69 5.38-5.25 5.66.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12c0-6.35-5.15-11.5-11.5-11.5z"/></svg>
+                                        <span>GitHub</span>
+                                    </a>
+                                    <a class="uw-a11y-about-action" href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/issues" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                        <span>Report an issue</span>
+                                    </a>
+                                    <a class="uw-a11y-about-action" href="https://github.com/Heroic-Pixel/Pinpoint-Accessibility-Checker/releases" target="_blank" rel="noopener noreferrer">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+                                        <span>Changelog</span>
+                                    </a>
+                                </div>
+
+                                <div class="uw-a11y-about-credit">
+                                    Made with care by <a href="https://heroicpixel.com" target="_blank" rel="noopener noreferrer">Heroic Pixel</a>
+                                </div>
                             </div>
                         </div>
 
@@ -4910,6 +5055,204 @@
                     width: 18px;
                     height: 18px;
                 }
+
+                /* ── About view ────────────────────────────────────────── */
+                #uw-a11y-panel .uw-a11y-about {
+                    padding: 0 0 24px;
+                }
+                #uw-a11y-panel .uw-a11y-about-hero {
+                    position: relative;
+                    text-align: center;
+                    padding: 36px 24px 28px;
+                    border-radius: 16px;
+                    background: linear-gradient(160deg, #f5f3ff 0%, #eff6ff 50%, #ecfeff 100%);
+                    border: 1px solid rgba(99,102,241,0.15);
+                    overflow: hidden;
+                    margin-bottom: 18px;
+                }
+                #uw-a11y-panel .uw-a11y-about-hero-bg {
+                    position: absolute;
+                    inset: 0;
+                    pointer-events: none;
+                    filter: blur(48px);
+                    opacity: 0.55;
+                }
+                #uw-a11y-panel .uw-a11y-about-glow {
+                    position: absolute;
+                    width: 220px;
+                    height: 220px;
+                    border-radius: 50%;
+                }
+                #uw-a11y-panel .uw-a11y-about-glow-a {
+                    top: -60px; left: -40px;
+                    background: radial-gradient(circle, #a78bfa, transparent 65%);
+                }
+                #uw-a11y-panel .uw-a11y-about-glow-b {
+                    top: -40px; right: -60px;
+                    background: radial-gradient(circle, #60a5fa, transparent 65%);
+                }
+                #uw-a11y-panel .uw-a11y-about-glow-c {
+                    bottom: -80px; left: 30%;
+                    background: radial-gradient(circle, #5eead4, transparent 65%);
+                }
+                #uw-a11y-panel .uw-a11y-about-logo {
+                    position: relative;
+                    width: 88px;
+                    height: 88px;
+                    filter: drop-shadow(0 8px 18px rgba(116,53,205,0.25));
+                    margin-bottom: 14px;
+                    animation: uw-a11y-about-float 6s ease-in-out infinite;
+                }
+                @keyframes uw-a11y-about-float {
+                    0%, 100% { transform: translateY(0); }
+                    50%      { transform: translateY(-4px); }
+                }
+                #uw-a11y-panel .uw-a11y-about-wordmark {
+                    position: relative;
+                    font-size: 28px;
+                    font-weight: 800;
+                    letter-spacing: -0.02em;
+                    background: linear-gradient(120deg, #7435CD 0%, #4f46e5 50%, #0891b2 100%);
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    color: transparent;
+                    line-height: 1.1;
+                }
+                #uw-a11y-panel .uw-a11y-about-tagline {
+                    position: relative;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #6b7280;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    margin-top: 4px;
+                }
+                #uw-a11y-panel .uw-a11y-about-blurb {
+                    position: relative;
+                    margin: 14px auto 0;
+                    max-width: 380px;
+                    font-size: 13.5px;
+                    line-height: 1.55;
+                    color: #374151;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-stats {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                    margin-bottom: 18px;
+                }
+                #uw-a11y-panel .uw-a11y-about-stat {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    padding: 10px 12px;
+                    background: #fff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+                }
+                #uw-a11y-panel .uw-a11y-about-stat-label {
+                    font-size: 10.5px;
+                    font-weight: 600;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    color: #6b7280;
+                }
+                #uw-a11y-panel .uw-a11y-about-stat-value {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #111827;
+                    word-break: break-word;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-features {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    margin-bottom: 18px;
+                }
+                #uw-a11y-panel .uw-a11y-about-feature {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 10px;
+                    padding: 10px 12px;
+                    background: #ffffff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    font-size: 13px;
+                    line-height: 1.45;
+                    color: #1f2937;
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-about-feature:hover {
+                    border-color: rgba(99,102,241,0.45);
+                    box-shadow: 0 4px 12px rgba(99,102,241,0.08);
+                }
+                #uw-a11y-panel .uw-a11y-about-feature svg {
+                    width: 18px;
+                    height: 18px;
+                    flex-shrink: 0;
+                    color: #6366f1;
+                    margin-top: 1px;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-actions {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 8px;
+                    margin-bottom: 16px;
+                }
+                #uw-a11y-panel .uw-a11y-about-action {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    padding: 14px 8px;
+                    background: #ffffff;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    text-decoration: none;
+                    color: #111827;
+                    font-size: 12px;
+                    font-weight: 600;
+                    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-about-action:hover,
+                #uw-a11y-panel .uw-a11y-about-action:focus-visible {
+                    transform: translateY(-1px);
+                    border-color: rgba(79,70,229,0.55);
+                    box-shadow: 0 6px 14px rgba(79,70,229,0.12);
+                    background: #fafaff;
+                    outline: none;
+                }
+                #uw-a11y-panel .uw-a11y-about-action svg {
+                    width: 20px;
+                    height: 20px;
+                    color: #4f46e5;
+                }
+
+                #uw-a11y-panel .uw-a11y-about-credit {
+                    text-align: center;
+                    font-size: 12px;
+                    color: #6b7280;
+                    padding-top: 6px;
+                }
+                #uw-a11y-panel .uw-a11y-about-credit a {
+                    color: #4f46e5;
+                    font-weight: 600;
+                    text-decoration: none;
+                }
+                #uw-a11y-panel .uw-a11y-about-credit a:hover,
+                #uw-a11y-panel .uw-a11y-about-credit a:focus-visible {
+                    text-decoration: underline;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    #uw-a11y-panel .uw-a11y-about-logo {
+                        animation: none;
+                    }
+                }
                 
                 #uw-a11y-panel #uw-a11y-header h2 {
                     margin: 0;
@@ -5020,98 +5363,94 @@
                 }
                 #uw-a11y-panel .uw-a11y-issue {
                     margin-bottom: 14px;
-                    padding: 16px;
-                    border-left: 3px solid #f0a500;
-                    background: #fdfaf0;
-                    border-radius: 14px;
+                    padding: 16px 16px 14px 18px;
+                    border: 1px solid #e5e7eb;
+                    border-left: 4px solid #d1d5db;
+                    background: #ffffff;
+                    border-radius: 12px;
                     cursor: pointer;
-                    transition: box-shadow 0.2s ease, transform 0.15s ease;
+                    transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
                     position: relative;
                     outline: none;
-
+                    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
                 }
-                
-                /* Hover states for different issue types */
+
+                /* Type-specific accents — neutralized fills, color reserved
+                   for the left border, icon, badge, and learn-more link. */
+                #uw-a11y-panel .uw-a11y-issue.error {
+                    border-left-color: #dc3545;
+                    background: #fffbfb; /* barely-there red — keeps urgency without flooding */
+                }
+                #uw-a11y-panel .uw-a11y-issue.warning {
+                    border-left-color: #f0a500;
+                    background: #ffffff;
+                }
+                #uw-a11y-panel .uw-a11y-issue.info {
+                    border-left-color: #17a2b8;
+                    background: #ffffff;
+                }
+
+                /* Hover — subtle lift; no pastel flood. */
                 #uw-a11y-panel .uw-a11y-issue:hover {
                     transform: translateY(-1px);
-                    border-color: rgba(0,0,0,0.15);
+                    box-shadow: 0 6px 16px rgba(15,23,42,0.08);
+                    border-color: #d1d5db;
                 }
-                
-                #uw-a11y-panel .uw-a11y-issue.error:hover {
-                    background: #f7eaebff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 23, 41, 0.35);
-                    border-color: rgba(182, 25, 41, 0.96);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.warning:hover {
-                    background: #faf6e9ff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 133, 23, 0.35);
-                    border-color: rgba(255, 193, 7, 0.87);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.info:hover {
-                    background: #f5f9feff;
-                    box-shadow: 0 4px 20px 0 rgba(23, 104, 211, 0.35);
-                    border-color: rgba(23, 162, 184, 0.93);
-                    cursor: default;
-                }
-                
-                /* Focus states for keyboard accessibility */
+                #uw-a11y-panel .uw-a11y-issue.error:hover  { border-left-color: #dc3545; box-shadow: 0 6px 16px rgba(220,53,69,0.18); }
+                #uw-a11y-panel .uw-a11y-issue.warning:hover { border-left-color: #f0a500; box-shadow: 0 6px 16px rgba(240,165,0,0.18); }
+                #uw-a11y-panel .uw-a11y-issue.info:hover    { border-left-color: #17a2b8; box-shadow: 0 6px 16px rgba(23,162,184,0.18); cursor: default; }
+
+                /* Focus — keep colored outlines for keyboard users. */
                 #uw-a11y-panel .uw-a11y-issue:focus {
                     outline: 3px solid #007cba;
                     outline-offset: 2px;
                     transform: translateY(-1px);
                     z-index: 1;
                 }
-                
-                #uw-a11y-panel .uw-a11y-issue.error:focus {
-                    outline-color: #dc3545;
-                    background: #fbe6e8ff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 23, 42, 0.38);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.warning:focus {
-                    outline-color: #ffc107;
-                    background: #fbf5e1ff;
-                    box-shadow: 0 4px 20px 0 rgba(211, 133, 23, 0.35);
-                }
-                
-                #uw-a11y-panel .uw-a11y-issue.info:focus {
-                    outline-color: #17a2b8;
-                    background: #dcedffff;
-                    box-shadow: 0 4px 20px 0 rgba(23, 104, 211, 0.35);
-                }
-                
-                /* Active/pressed states */
+                #uw-a11y-panel .uw-a11y-issue.error:focus   { outline-color: #dc3545; }
+                #uw-a11y-panel .uw-a11y-issue.warning:focus { outline-color: #f0a500; }
+                #uw-a11y-panel .uw-a11y-issue.info:focus    { outline-color: #17a2b8; }
+
                 #uw-a11y-panel .uw-a11y-issue:active {
                     transform: translateY(0px);
                     transition: transform 0.1s ease;
                 }
-                
-                /* Enhanced checked state hover */
-                #uw-a11y-panel .uw-a11y-issue.checked:hover {
-                    background: #c3e6cb !important;
-                    transform: translateY(-1px);
+
+                /* Verified manual-review items — green left bar + faint tint. */
+                #uw-a11y-panel .uw-a11y-issue.checked {
+                    border-left-color: #28a745;
+                    background: #f4faf5;
                 }
-                
+                #uw-a11y-panel .uw-a11y-issue.checked:hover {
+                    box-shadow: 0 6px 16px rgba(40,167,69,0.18);
+                }
                 #uw-a11y-panel .uw-a11y-issue.checked:focus {
                     outline-color: #28a745;
-                    background: #c3e6cb !important;
                 }
-               #uw-a11y-panel .uw-a11y-issue.error {
-                    border-left-color: #e53e51;
-                    background: #fdf4f5;
-                    box-shadow: 0 2px 12px rgba(211, 23, 41, 0.1);
+
+                /* Severity badge — small pill that carries the type label. */
+                #uw-a11y-panel .uw-a11y-issue-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    flex-shrink: 0;
+                    margin-left: auto;
+                    padding: 2px 9px;
+                    border-radius: 999px;
+                    font-size: 10.5px;
+                    font-weight: 700;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    line-height: 1.6;
+                    border: 1px solid transparent;
+                    white-space: nowrap;
                 }
-                #uw-a11y-panel .uw-a11y-issue.warning {
-                    border-left-color: #f0a500;
-                    background: #fdfaf0;
-                    box-shadow: 0 2px 12px rgba(211, 133, 23, 0.1);
-                }
-                #uw-a11y-panel .uw-a11y-issue.info {
-                    border-left-color: #17a2b8;
-                    background: #f3fafc;
-                    box-shadow: 0 2px 12px rgba(23, 104, 211, 0.1);
+                #uw-a11y-panel .uw-a11y-issue-badge.type-error   { background: rgba(220,53,69,0.10);  color: #b91c1c; border-color: rgba(220,53,69,0.30); }
+                #uw-a11y-panel .uw-a11y-issue-badge.type-warning { background: rgba(240,165,0,0.12);  color: #92590a; border-color: rgba(240,165,0,0.35); }
+                #uw-a11y-panel .uw-a11y-issue-badge.type-info    { background: rgba(23,162,184,0.10); color: #0c6478; border-color: rgba(23,162,184,0.32); }
+                #uw-a11y-panel .uw-a11y-issue.checked .uw-a11y-issue-badge.type-warning {
+                    background: rgba(40,167,69,0.10);
+                    color: #166534;
+                    border-color: rgba(40,167,69,0.32);
                 }
                 #uw-a11y-panel .uw-a11y-issue h4 {
                     margin: 0 0 10px 0;
@@ -5253,13 +5592,15 @@
                 #uw-a11y-panel .uw-a11y-issue .how-to-fix {
                     margin-top: 12px;
                     border-radius: 10px;
-                    background: rgba(255,255,255,0.72);
+                    background: #ffffff;
                     padding: 12px 14px;
                     font-size: 13px;
                     line-height: 1.55;
                     color: #1a1a2e;
                     font-weight: 400;
+                    border: 1px solid #e5e7eb;
                     border-left: 3px solid rgb(51, 141, 214);
+                    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
                     display: flex;
                     align-items: flex-start;
                     gap: 10px;
@@ -5353,13 +5694,13 @@
                     cursor: pointer;
                 }
                 #uw-a11y-panel .uw-a11y-issue.checked {
-                    opacity: 0.7;
-                    background: #d4edda !important;
+                    opacity: 0.85;
+                    background: #f4faf5 !important;
                     border-left-color: #28a745 !important;
                 }
                 #uw-a11y-panel .uw-a11y-issue.checked .uw-a11y-manual-check {
-                    background: #d4edda;
-                    border-color: #c3e6cb;
+                    background: rgba(40,167,69,0.08);
+                    border-color: rgba(40,167,69,0.25);
                 }
                 #uw-a11y-panel .uw-a11y-check-label {
                     color: #155724;
@@ -11634,6 +11975,31 @@
                         </label>
                     </div>
 
+                    <div class="uw-a11y-setting-card">
+                        <div class="uw-a11y-setting-label">Issue Highlight</div>
+                        <div class="uw-a11y-helptext" style="margin-bottom:10px;">How elements look when you click an issue, and how long the highlight stays.</div>
+                        <div class="uw-a11y-settings-2col">
+                            <div>
+                                <label for="uw-a11y-highlight-style" class="uw-a11y-setting-label">Style</label>
+                                <select id="uw-a11y-highlight-style" class="uw-a11y-input">
+                                    ${Object.entries(this.getHighlightStylePresets()).map(([key, p]) => {
+                                        const sel = this.getHighlightStyle() === key ? ' selected' : '';
+                                        return `<option value="${this.escapeHtmlAttr(key)}"${sel}>${this.escapeHtmlContent(p.label)}</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label for="uw-a11y-highlight-duration" class="uw-a11y-setting-label">Duration</label>
+                                <select id="uw-a11y-highlight-duration" class="uw-a11y-input">
+                                    ${this.getHighlightDurationOptions().map(o => {
+                                        const sel = this.getHighlightDuration() === o.value ? ' selected' : '';
+                                        return `<option value="${o.value}"${sel}>${this.escapeHtmlContent(o.label)}</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <p class="uw-a11y-section-divider">Results</p>
 
                     <div class="uw-a11y-setting-card">
@@ -11845,6 +12211,22 @@
                     } else {
                         localStorage.setItem('uw-a11y-sounds', 'off');
                     }
+                });
+            }
+
+            // Highlight style + duration — apply instantly, no re-scan needed
+            const hlStyleSel = this.shadowRoot.getElementById('uw-a11y-highlight-style');
+            if (hlStyleSel) {
+                hlStyleSel.addEventListener('change', () => {
+                    this.setHighlightStyle(hlStyleSel.value);
+                    this.playSound('ui');
+                });
+            }
+            const hlDurationSel = this.shadowRoot.getElementById('uw-a11y-highlight-duration');
+            if (hlDurationSel) {
+                hlDurationSel.addEventListener('change', () => {
+                    this.setHighlightDuration(parseInt(hlDurationSel.value, 10));
+                    this.playSound('ui');
                 });
             }
 
@@ -12904,7 +13286,7 @@
                          id=\"issue-${this.sanitizeHtmlId(ruleId)}\">
                          ${instanceNavigation}
                         <h4>
-                            <span class=\"uw-a11y-issue-header\">${iconSvg}<span class=\"uw-a11y-issue-title\">${this.escapeHtmlContent(firstIssue.title)} ${issueGroup.length > 1 ? `(${issueGroup.length} instances)` : ''}</span></span>
+                            <span class=\"uw-a11y-issue-header\">${iconSvg}<span class=\"uw-a11y-issue-title\">${this.escapeHtmlContent(firstIssue.title)} ${issueGroup.length > 1 ? `(${issueGroup.length} instances)` : ''}</span><span class=\"uw-a11y-issue-badge type-${firstIssue.type}\">${this.getIssueTypeLabel(firstIssue.type, isManualReview && this.isRuleVerified(ruleId))}</span></span>
                         </h4>
                         <div class=\"how-to-fix\"><div class=\"how-to-fix-icon\"><svg viewBox=\"0 0 512 512\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M331.8 224.1c28.29 0 54.88 10.99 74.86 30.97l19.59 19.59c40.01-17.74 71.25-53.3 81.62-96.65c5.725-23.92 5.34-47.08 .2148-68.4c-2.613-10.88-16.43-14.51-24.34-6.604l-68.9 68.9h-75.6V97.2l68.9-68.9c7.912-7.912 4.275-21.73-6.604-24.34c-21.32-5.125-44.48-5.51-68.4 .2148c-55.3 13.23-98.39 60.22-107.2 116.4C224.5 128.9 224.2 137 224.3 145l82.78 82.86C315.2 225.1 323.5 224.1 331.8 224.1zM384 278.6c-23.16-23.16-57.57-27.57-85.39-13.9L191.1 158L191.1 95.99l-127.1-95.99L0 63.1l96 127.1l62.04 .0077l106.7 106.6c-13.67 27.82-9.251 62.23 13.91 85.39l117 117.1c14.62 14.5 38.21 14.5 52.71-.0016l52.75-52.75c14.5-14.5 14.5-38.08-.0016-52.71L384 278.6zM227.9 307L168.7 247.9l-148.9 148.9c-26.37 26.37-26.37 69.08 0 95.45C32.96 505.4 50.21 512 67.5 512s34.54-6.592 47.72-19.78l119.1-119.1C225.5 352.3 222.6 329.4 227.9 307zM64 472c-13.25 0-24-10.75-24-24c0-13.26 10.75-24 24-24S88 434.7 88 448C88 461.3 77.25 472 64 472z\"/></svg></div><div><strong>How to fix:</strong> <span id=\"recommendation-${this.sanitizeHtmlId(ruleId)}\"></span></div></div>
                         ${isManualReview ? `
@@ -13465,6 +13847,20 @@
             if (!guided) return;
             guided.innerHTML = `<div class="uw-a11y-walkthrough" id="uw-a11y-walkthrough"></div>`;
             this.renderWalkthroughStep();
+            // Auto-highlight the first instance on the page so the user
+            // immediately sees what the rule is referring to. Subsequent
+            // instances already auto-highlight via stepWalkthroughInstance.
+            this.highlightCurrentWalkthroughInstance();
+        },
+
+        highlightCurrentWalkthroughInstance: function() {
+            try {
+                if (!this.walkthroughGroups) return;
+                const idx = this.walkthroughIndex || 0;
+                const entry = this.walkthroughGroups[idx];
+                if (!entry || !entry.ruleId) return;
+                this.highlightCurrentInstance(entry.ruleId, true);
+            } catch (_) { /* best-effort */ }
         },
 
         renderWalkthroughStep: function() {
@@ -13620,6 +14016,7 @@
             if (next < 0 || next >= total) return;
             this.walkthroughIndex = next;
             this.renderWalkthroughStep();
+            this.highlightCurrentWalkthroughInstance();
             this.playSound('navigate');
         },
 
@@ -13938,6 +14335,15 @@
 
         // Return a consistent SVG icon for a given issue type
         // variant: 'issue' | 'summary' (controls class names)
+        // Short label shown on the severity badge in the rule-group header.
+        getIssueTypeLabel: function(type, isVerified) {
+            if (isVerified) return 'Verified';
+            if (type === 'error') return 'Error';
+            if (type === 'warning') return 'Manual review';
+            if (type === 'info') return 'Best practice';
+            return '';
+        },
+
         getIssueTypeIcon: function(type, variant) {
             const cls = variant === 'issue' ? 'uw-a11y-issue-icon' : '';
             const base = (extra) => extra ? `${cls} ${extra}` : cls;
@@ -14267,16 +14673,45 @@
                     }
                 }, 700);
 
-                // Cleanup highlight and temporary tabindex after a delay
-                setTimeout(() => {
+                // Cleanup highlight + revealed-ancestor undo after the
+                // user-configured duration. duration === 0 means "persist
+                // until the user picks another issue or clicks elsewhere".
+                if (this._highlightCleanupTimer) {
+                    clearTimeout(this._highlightCleanupTimer);
+                    this._highlightCleanupTimer = null;
+                }
+                if (this._highlightAwayHandler) {
+                    document.removeEventListener('mousedown', this._highlightAwayHandler, true);
+                    this._highlightAwayHandler = null;
+                }
+
+                const cleanup = () => {
                     if (el && el.classList) el.classList.remove('uw-a11y-highlight');
                     if (el && el.hasAttribute && el.hasAttribute('data-uw-a11y-temp-tabindex')) {
                         el.removeAttribute('tabindex');
                         el.removeAttribute('data-uw-a11y-temp-tabindex');
                     }
-                    // Re-hide previously hidden ancestors
                     try { if (typeof cleanupReveal === 'function') cleanupReveal(); } catch (_) { /* ignore */ }
-                }, 3000);
+                };
+
+                const duration = this.getHighlightDuration();
+                if (duration > 0) {
+                    this._highlightCleanupTimer = setTimeout(cleanup, duration);
+                } else {
+                    // Persist until user clicks somewhere that isn't the
+                    // highlighted element itself or the Pinpoint UI.
+                    this._highlightAwayHandler = (ev) => {
+                        const t = ev.target;
+                        if (!t) return;
+                        if (el && (t === el || (el.contains && el.contains(t)))) return;
+                        const container = document.getElementById('uw-a11y-container');
+                        if (container && (t === container || container.contains(t))) return;
+                        document.removeEventListener('mousedown', this._highlightAwayHandler, true);
+                        this._highlightAwayHandler = null;
+                        cleanup();
+                    };
+                    document.addEventListener('mousedown', this._highlightAwayHandler, true);
+                }
             }
         },
 
