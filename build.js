@@ -130,7 +130,22 @@ function updateIndexHtml(minifiedCode) {
     indexContent = beforeCode + newBookmarkletCode + afterCode;
     console.log(`🔍 HTML file length change: ${originalLength} → ${indexContent.length}`);
 
+    // Inject the package.json version into the <!--VERSION--> marker
+    indexContent = injectVersion(indexContent);
+
     fs.writeFileSync(indexPath, indexContent, 'utf8');
+}
+
+function injectVersion(html) {
+    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+    const version = pkg.version;
+    const versionRegex = /<!--VERSION-->[\s\S]*?<!--\/VERSION-->/;
+    if (!versionRegex.test(html)) {
+        console.log('⚠️ No <!--VERSION--> marker found, skipping version injection');
+        return html;
+    }
+    console.log(`🏷️  Injecting version ${version}`);
+    return html.replace(versionRegex, `<!--VERSION-->${version}<!--/VERSION-->`);
 }
 
 function updateTestPage(minifiedCode) {
@@ -203,14 +218,14 @@ function updateTestPage(minifiedCode) {
 if (process.argv.includes('--watch')) {
     const chokidar = require('chokidar');
     
-    console.log('👀 Watching accessibility-checker.js for changes...');
-    
+    console.log('👀 Watching accessibility-checker.js and package.json for changes...');
+
     // Build once initially
     buildBookmarklet();
-    
+
     // Watch for changes
-    chokidar.watch('accessibility-checker.js').on('change', () => {
-        console.log('\n📝 File changed, rebuilding...');
+    chokidar.watch(['accessibility-checker.js', 'package.json']).on('change', (filePath) => {
+        console.log(`\n📝 ${filePath} changed, rebuilding...`);
         buildBookmarklet();
     });
     
