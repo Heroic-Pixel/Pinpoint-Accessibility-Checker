@@ -9,7 +9,7 @@
     
             // Main accessibility checker object
         window.uwAccessibilityChecker = {
-            version: '1.7.1', // Current version
+            version: '1.7.2', // Current version
             websiteUrl: 'https://pinpoint.heroicpixel.com/', // Main website URL
             legacyDomainUrl: 'https://althe3rd.github.io/Pinpoint/', // Legacy domain for transition
             issues: [],
@@ -330,7 +330,11 @@
                     // for "Ensures all page content is contained by landmarks"
                     'region': { enabled: false },
                     // Disable AAA color contrast unless user asks for AAA
-                    'color-contrast-enhanced': { enabled: isAAA }
+                    'color-contrast-enhanced': { enabled: isAAA },
+                    // We replace axe's empty-heading rule with our own scan that
+                    // also catches whitespace-only headings (e.g. <h2>&nbsp;</h2>)
+                    // and always reports them as a violation, not manual review.
+                    'empty-heading': { enabled: false }
                 },
                 runOnly: { type: 'tag', values: tags }
             };
@@ -346,6 +350,13 @@
                 }
                 
                 this.processAxeResults(results);
+                // Always run our empty/whitespace heading scan (replaces axe's
+                // empty-heading rule, which is disabled above).
+                try {
+                    this.runEmptyHeadingChecks();
+                } catch (e) {
+                    console.warn('Empty heading scan failed:', e);
+                }
                 // Run additional best-practices checks if enabled
                 try {
                     if (this.isBestPracticesEnabled()) {
@@ -742,6 +753,97 @@
             });
         },
 
+        // Scan for headings with no real text — either truly empty
+        // (<h2></h2>) or whitespace-only (<h2>&nbsp;</h2>, <h2>   </h2>).
+        // Replaces axe-core's empty-heading rule (disabled in axeConfig)
+        // because axe treats U+00A0 as content and sometimes reports
+        // empty-heading as manual review instead of a violation. Both
+        // forms break the page outline and screen-reader navigation, so
+        // we always report them as errors.
+        runEmptyHeadingChecks: function() {
+            const includeSels = this.getEffectiveIncludeSelectors();
+            const scopedRoots = includeSels.length > 0
+                ? includeSels.flatMap(sel => { try { return Array.from(document.querySelectorAll(sel)); } catch(_) { return []; } })
+                : [document];
+            const scopedQueryAll = (sel) => scopedRoots.flatMap(root => { try { return Array.from(root.querySelectorAll(sel)); } catch(_) { return []; } });
+
+            const isVisible = (el) => {
+                try {
+                    if (!el || !(el instanceof Element)) return false;
+                    if (el.hidden) return false;
+                    const style = window.getComputedStyle(el);
+                    if (!style || style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+                    if (el.closest && el.closest('#uw-a11y-container')) return false;
+                    if (this.shouldExcludeElement && this.shouldExcludeElement(el)) return false;
+                    return true;
+                } catch (_) {
+                    return true;
+                }
+            };
+
+            // Strip standard whitespace plus non-breaking space and zero-width chars
+            const stripWhitespace = (s) => (s || '').replace(/[\s ​-‍﻿]/g, '');
+
+            const headings = scopedQueryAll('h1, h2, h3, h4, h5, h6, [role="heading"]');
+            headings.forEach(h => {
+                if (!isVisible(h)) return;
+
+                // If an ARIA label provides real text, the heading has an accessible name.
+                const ariaLabel = stripWhitespace(h.getAttribute('aria-label') || '');
+                if (ariaLabel) return;
+                if (h.hasAttribute('aria-labelledby')) {
+                    const ids = h.getAttribute('aria-labelledby').split(/\s+/).filter(Boolean);
+                    const labelText = stripWhitespace(ids.map(id => {
+                        const ref = document.getElementById(id);
+                        return ref ? (ref.innerText || ref.textContent || '') : '';
+                    }).join(''));
+                    if (labelText) return;
+                }
+
+                // Image alt inside the heading counts as text content.
+                const imgWithAlt = h.querySelector('img[alt]');
+                if (imgWithAlt && imgWithAlt.getAttribute('alt').trim()) return;
+
+                const raw = h.textContent || '';
+                const stripped = stripWhitespace(raw);
+                if (stripped.length > 0) return;
+
+                const tag = h.tagName.toLowerCase();
+                const isTrulyEmpty = raw.length === 0;
+                const codes = Array.from(raw).map(c =>
+                    'U+' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+                ).join(' ');
+
+                const title = isTrulyEmpty
+                    ? 'Heading is empty'
+                    : 'Heading contains only whitespace';
+                const description = isTrulyEmpty
+                    ? 'This <' + tag + '> has no content. Screen readers will announce a heading with no text, breaking the page outline.'
+                    : 'This <' + tag + '> contains only whitespace (e.g. spaces or <code>&amp;nbsp;</code>) and has no readable text. Screen readers will announce a heading with no content, breaking the page outline.';
+                const recommendation = isTrulyEmpty
+                    ? 'Add meaningful text to the heading, or remove the heading element if it is decorative.'
+                    : 'Add meaningful text to the heading, or remove the heading element if it is decorative or used only for spacing. Avoid using <code>&amp;nbsp;</code> to create vertical space — use CSS margins or padding instead.';
+
+                const detailedInfo = [{ label: 'Element', value: '<' + tag + '>' }];
+                if (!isTrulyEmpty) {
+                    detailedInfo.push({ label: 'Character Codes', value: codes });
+                }
+
+                this.addIssue(
+                    'error',
+                    title,
+                    description,
+                    h,
+                    recommendation,
+                    'https://dequeuniversity.com/rules/axe/4.10/empty-heading',
+                    'minor',
+                    ['cat.name-role-value', 'best-practice', 'wcag2a', 'wcag131'],
+                    detailedInfo,
+                    'empty-heading'
+                );
+            });
+        },
+
         // Process axe-core results into our format
         processAxeResults: function(results) {
             this.issues = [];
@@ -930,7 +1032,151 @@
             // Format the recommendation with proper code escaping
             return this.formatRecommendation(recommendationText);
         },
-        
+
+        // Detect the CMS / site builder powering the current page so we can
+        // tailor "How to fix" advice. Cached for the session — the platform
+        // doesn't change while the panel is open.
+        detectPlatform: function() {
+            if (this._platform !== undefined) return this._platform;
+            let p = null;
+            try {
+                const gen = document.querySelector('meta[name="generator"]');
+                const genContent = ((gen && gen.getAttribute('content')) || '').toLowerCase();
+                if (genContent.includes('wordpress')) p = 'wordpress';
+                else if (genContent.includes('drupal')) p = 'drupal';
+                else if (genContent.includes('squarespace')) p = 'squarespace';
+                else if (genContent.includes('wix.com') || genContent.includes('wix ')) p = 'wix';
+                else if (genContent.includes('webflow')) p = 'webflow';
+                else if (genContent.includes('shopify')) p = 'shopify';
+                else if (genContent.includes('hubspot')) p = 'hubspot';
+
+                if (!p) {
+                    if (window.wp || document.getElementById('wpadminbar') ||
+                        document.querySelector('link[href*="wp-content"], script[src*="wp-content"], script[src*="wp-includes"], link[href*="/wp-json/"]')) p = 'wordpress';
+                    else if (window.Drupal || (document.body && document.body.classList && [...document.body.classList].some(c => c.startsWith('node-type-') || c === 'drupal' || c.startsWith('path-'))) ||
+                        document.querySelector('script[src*="/sites/default/files/"], link[href*="/sites/default/files/"], script[src*="/sites/all/"], script[src*="/core/misc/drupal"]')) p = 'drupal';
+                    else if (document.querySelector('script[src*="static.squarespace.com"], link[href*="static.squarespace.com"], img[src*="squarespace-cdn.com"]')) p = 'squarespace';
+                    else if (window.Shopify || document.querySelector('script[src*="cdn.shopify.com"], link[href*="cdn.shopify.com"]')) p = 'shopify';
+                    else if (document.querySelector('script[src*="wixstatic.com"], img[src*="wixstatic.com"], script[src*="parastorage.com"]')) p = 'wix';
+                    else if (document.querySelector('html[data-wf-page], html[data-wf-site], script[src*="webflow.com"], script[src*="webflow.io"]')) p = 'webflow';
+                    else if (document.querySelector('script[src*="js.hs-scripts.com"], script[src*="js.hubspot.com"], script[src*="hs-analytics.net"]')) p = 'hubspot';
+                }
+            } catch (_) { /* best-effort */ }
+            this._platform = p;
+            return p;
+        },
+
+        // Friendly label for a detected platform.
+        getPlatformLabel: function(platform) {
+            const p = platform || this.detectPlatform();
+            const labels = {
+                wordpress: 'WordPress',
+                drupal: 'Drupal',
+                squarespace: 'Squarespace',
+                wix: 'Wix',
+                shopify: 'Shopify',
+                webflow: 'Webflow',
+                hubspot: 'HubSpot'
+            };
+            return labels[p] || '';
+        },
+
+        // Platform-specific "where to fix this" guidance, keyed by axe rule
+        // ID (or our `bp-*` IDs). Tips intentionally reference the editor /
+        // admin path, not code, since that's the value-add over the generic
+        // recommendation. Returns '' when no tip is defined for the
+        // current platform × rule combination.
+        getPlatformTip: function(ruleId) {
+            const platform = this.detectPlatform();
+            if (!platform || !ruleId) return '';
+            const baseId = String(ruleId).toLowerCase().replace(/-(error|warning|info)$/, '');
+            const tips = {
+                wordpress: {
+                    'image-alt': 'Open the page in the WordPress editor, click the image block, and fill the <strong>Alternative text</strong> field in the Block sidebar. For images in the Media Library, edit the attachment to update its alt text everywhere it\'s used.',
+                    'input-image-alt': 'In the form plugin or block, edit the image-input field and add alt text via the field settings.',
+                    'role-img-alt': 'If the image was added via a Custom HTML block, edit the block and add an <code>alt</code> attribute (or <code>aria-label</code> for SVGs).',
+                    'svg-img-alt': 'If the SVG was inserted via Custom HTML or a theme template, add a <code>&lt;title&gt;</code> child or <code>aria-label</code> to give it a name.',
+                    'link-name': 'Edit the page in the block editor, click the link, and use the link toolbar to replace generic phrases like "click here" with descriptive wording.',
+                    'empty-heading': 'In the block editor, click the empty heading block and either type heading text or use the block toolbar to convert it to a Paragraph or Spacer block.',
+                    'heading-order': 'Open List View (top-left toolbar) to see the heading outline, then use each heading block\'s toolbar to change its level (H1–H6).',
+                    'page-has-heading-one': 'Most themes render the post / page title as the H1. Confirm the title is set, or add an H1 heading block at the top of the content.',
+                    'document-title': 'Set the page title in the editor, or configure your SEO plugin (Yoast, Rank Math, AIOSEO) to provide a title tag.',
+                    'html-has-lang': 'Edit <strong>Settings → General → Site Language</strong>; the theme\'s header.php should already use <code>language_attributes()</code>.',
+                    'color-contrast': 'Adjust colors in <strong>Appearance → Editor → Styles</strong> (block themes), the Customizer (classic themes), or the block\'s color settings. If your theme uses theme.json, edit the color palette there.',
+                    'meta-viewport': 'This is set by the theme. Edit the theme\'s header.php (or switch themes) to remove <code>user-scalable=no</code> / <code>maximum-scale</code> from the viewport meta.',
+                    'video-caption': 'Re-host the video on YouTube/Vimeo with captions enabled and embed via the Video / YouTube block. The native Video block does not provide a captions UI.',
+                    'frame-title': 'When embedding via a Custom HTML block, add <code>title="..."</code> to the <code>&lt;iframe&gt;</code>.',
+                    'label': 'In the form plugin (Gravity Forms, Contact Form 7, Forminator, etc.), edit the field and ensure the visible Label is set, not just a placeholder.'
+                },
+                drupal: {
+                    'image-alt': 'Edit the node, open the image field, and fill the <strong>Alternative text</strong>. For media library images, edit the media entity so every reference inherits the alt text.',
+                    'input-image-alt': 'Edit the form (Webform / form_alter) and add alt text to the image-input field settings.',
+                    'svg-img-alt': 'If the SVG is in a CKEditor body, switch to source view and add <code>aria-label</code> or a <code>&lt;title&gt;</code> child.',
+                    'link-name': 'Edit the node or block where the link lives and use the CKEditor link dialog to rewrite the link text.',
+                    'empty-heading': 'In CKEditor, place the cursor in the empty heading and either type content or use the Format dropdown to convert it back to Paragraph.',
+                    'heading-order': 'Use the CKEditor Format dropdown to adjust heading levels in the body field, or restructure block placement in the layout.',
+                    'document-title': 'Confirm the node has a Title, and review the <strong>Metatag</strong> module configuration for the content type.',
+                    'html-has-lang': 'Enable the core <strong>Language</strong> module and configure <strong>Configuration → Regional and language → Languages</strong>.',
+                    'color-contrast': 'Adjust theme color tokens in your subtheme\'s CSS / theme settings (Olivero, Claro, and Gin all expose color variables).',
+                    'video-caption': 'When adding the video via the Media library, attach a captions / subtitle file to the media entity so it travels with every reference.',
+                    'frame-title': 'In CKEditor source view (or via a custom embed plugin), add <code>title="..."</code> to the <code>&lt;iframe&gt;</code>.',
+                    'label': 'In the form (Webform or Form API), set the field\'s <strong>Title</strong> and either show it or set its display to "invisible" rather than removing the label.'
+                },
+                squarespace: {
+                    'image-alt': 'Click the image block, open <strong>Edit</strong>, and fill the <strong>Image alt text</strong> field. (When "Display caption" is on, the caption can also serve as alt.)',
+                    'link-name': 'Click the text or button block, edit the link, and replace generic phrases with descriptive text.',
+                    'empty-heading': 'Click the heading block in the editor and either type content or change the dropdown back to Paragraph / Normal.',
+                    'heading-order': 'Click each heading block and pick H1–H4 from the format dropdown so the outline reads in order.',
+                    'color-contrast': 'Open <strong>Site Styles → Colors</strong> to adjust the palette, or override section colors per page from the section\'s color theme.',
+                    'document-title': 'Open <strong>Pages → page settings → SEO</strong> and set the SEO Title.',
+                    'html-has-lang': 'Open <strong>Settings → Language & Region</strong> and confirm the site language is set.',
+                    'video-caption': 'Host the video on YouTube/Vimeo with captions enabled and embed it; Squarespace\'s native video block does not surface a captions UI.'
+                },
+                wix: {
+                    'image-alt': 'Click the image, choose <strong>Settings</strong> → <strong>"What\'s in the photo? Tell Google"</strong>, and fill in the alt text.',
+                    'link-name': 'Click the text or button, choose <strong>Edit Link</strong>, and rewrite the link text or button label.',
+                    'empty-heading': 'Click the empty heading and either type content or change the text style back to Paragraph in the text editor.',
+                    'color-contrast': 'Adjust colors via the element\'s Design panel or your site\'s <strong>Theme Manager</strong> (Color & Text Themes).',
+                    'document-title': 'Open <strong>Page Settings → SEO Basics</strong> and set the title tag.',
+                    'html-has-lang': 'Open <strong>Settings → Language & Region</strong> to set the primary site language.'
+                },
+                shopify: {
+                    'image-alt': 'Edit the product, collection, or page, click the image, and fill the <strong>Image alt text</strong> field. For theme-level images, edit them in <strong>Online Store → Themes → Customize</strong>.',
+                    'link-name': 'Edit the page or section in the theme editor and rewrite the link text in the rich-text or link field.',
+                    'color-contrast': 'Open <strong>Online Store → Themes → Customize → Theme settings → Colors</strong> to adjust the palette.',
+                    'document-title': 'Edit the page / product\'s <strong>Search engine listing</strong> section to set the title.',
+                    'video-caption': 'Upload a captions track via the video metafield, or embed via YouTube/Vimeo with captions on.',
+                    'label': 'In the form section settings, ensure each field\'s <strong>Label</strong> is set and visible (don\'t rely on placeholder text alone).'
+                },
+                webflow: {
+                    'image-alt': 'Select the image, open the <strong>Settings</strong> panel (D), and fill the <strong>Alt Text</strong> field. For dynamic CMS images, set Alt on the Collection field so every item inherits it.',
+                    'link-name': 'Select the link, open Settings, and edit the link text or <code>aria-label</code> as needed.',
+                    'empty-heading': 'Select the heading and either type content or change its tag (H1–H6 → Paragraph) in the Settings panel.',
+                    'heading-order': 'Use the Navigator panel to see the outline, then change each heading\'s tag in the Settings panel so levels read in order.',
+                    'color-contrast': 'Adjust colors via the Style panel or your Style Guide variables / Variables panel.',
+                    'document-title': 'Open <strong>Page Settings</strong> (gear icon on the page) and set the SEO Title Tag.'
+                },
+                hubspot: {
+                    'image-alt': 'Edit the page, click the image module, and fill the <strong>Alt text</strong> field in the module sidebar.',
+                    'link-name': 'Edit the rich-text module, select the link, and rewrite the visible link text.',
+                    'document-title': 'In the page editor, open <strong>Settings → General</strong> and set the Page Title.'
+                }
+            };
+            return (tips[platform] && tips[platform][baseId]) || '';
+        },
+
+        // Wrap a recommendation HTML string with the platform-specific tip
+        // (when one exists for the rule). Used at every render site so the
+        // tip surfaces in the advanced view, the walkthrough, and instance
+        // navigation alike.
+        decorateRecommendation: function(html, ruleId) {
+            const tip = this.getPlatformTip(ruleId);
+            if (!tip) return html || '';
+            const label = this.getPlatformLabel();
+            return (html || '') + '<div class="uw-a11y-platform-tip" data-platform="' + this.detectPlatform() + '"><strong>' + label + ' tip:</strong> ' + tip + '</div>';
+        },
+
+
         // Format recommendation text with proper code escaping
         formatRecommendation: function(text) {
             // Escape HTML entities to prevent injection and structural issues
@@ -950,8 +1196,14 @@
             // HTML escaping, so we expand them after escaping. Each entry maps
             // a sentinel to (label, icon path, onclick handler).
             const icon = (paths) => '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
-            const button = (label, iconSvg, handler) =>
-                '<button type="button" class="uw-a11y-inline-action" onclick="' + handler + ';return false;">' + iconSvg + label + '</button>';
+            // Use data-* attributes instead of inline onclick — inline event
+            // handlers are blocked by strict CSPs (script-src without
+            // 'unsafe-inline'). A single delegated listener attached in
+            // createPanel() reads these attributes and dispatches.
+            const button = (label, iconSvg, action, arg) => {
+                const attrs = ' data-uw-action="' + action + '"' + (arg ? ' data-uw-arg="' + arg + '"' : '');
+                return '<button type="button" class="uw-a11y-inline-action"' + attrs + '>' + iconSvg + label + '</button>';
+            };
 
             const ICON_SEARCH    = icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>');
             const ICON_HEADING   = icon('<path d="M6 4v16M18 4v16M6 12h12"/>');
@@ -963,14 +1215,14 @@
             const ICON_FOCUS     = icon('<rect x="6" y="6" width="12" height="12" rx="1"/><path d="M3 3h3M21 3h-3M3 21h3M21 21h-3"/>');
 
             const replacements = [
-                ['{{OPEN_CONTRAST_CHECKER}}', button('Open the built-in Contrast Checker', ICON_SEARCH, 'window.uwAccessibilityChecker.openContrastChecker()')],
-                ['{{OPEN_INSPECTOR:outline}}',  button('Open the Page Outline',      ICON_HEADING, "window.uwAccessibilityChecker.openInspectorTool('outline')")],
-                ['{{OPEN_INSPECTOR:links}}',    button('Open the Links inspector',   ICON_LINK,    "window.uwAccessibilityChecker.openInspectorTool('links')")],
-                ['{{OPEN_INSPECTOR:alt}}',      button('Open the Alt-text inspector', ICON_IMAGE,  "window.uwAccessibilityChecker.openInspectorTool('alt')")],
-                ['{{OPEN_INSPECTOR:cvd}}',      button('Open Color-blindness simulation', ICON_EYE, "window.uwAccessibilityChecker.openInspectorTool('cvd')")],
-                ['{{TOGGLE_LANDMARKS}}',        button('Toggle landmark overlay',    ICON_LAYOUT,  "window.uwAccessibilityChecker.toggleVisualization('landmarks')")],
-                ['{{TOGGLE_TAB_ORDER}}',        button('Toggle tab-order overlay',   ICON_TAB,     "window.uwAccessibilityChecker.toggleVisualization('tabOrder')")],
-                ['{{TOGGLE_FOCUS_INDICATORS}}', button('Toggle focus-indicator overlay', ICON_FOCUS, "window.uwAccessibilityChecker.toggleVisualization('focusIndicators')")]
+                ['{{OPEN_CONTRAST_CHECKER}}', button('Open the built-in Contrast Checker', ICON_SEARCH, 'openContrastChecker')],
+                ['{{OPEN_INSPECTOR:outline}}',  button('Open the Page Outline',      ICON_HEADING, 'openInspectorTool', 'outline')],
+                ['{{OPEN_INSPECTOR:links}}',    button('Open the Links inspector',   ICON_LINK,    'openInspectorTool', 'links')],
+                ['{{OPEN_INSPECTOR:alt}}',      button('Open the Alt-text inspector', ICON_IMAGE,  'openInspectorTool', 'alt')],
+                ['{{OPEN_INSPECTOR:cvd}}',      button('Open Color-blindness simulation', ICON_EYE, 'openInspectorTool', 'cvd')],
+                ['{{TOGGLE_LANDMARKS}}',        button('Toggle landmark overlay',    ICON_LAYOUT,  'toggleVisualization', 'landmarks')],
+                ['{{TOGGLE_TAB_ORDER}}',        button('Toggle tab-order overlay',   ICON_TAB,     'toggleVisualization', 'tabOrder')],
+                ['{{TOGGLE_FOCUS_INDICATORS}}', button('Toggle focus-indicator overlay', ICON_FOCUS, 'toggleVisualization', 'focusIndicators')]
             ];
 
             replacements.forEach(([sentinel, html]) => {
@@ -4323,6 +4575,72 @@
             // Hide deprecated minimize control; panel is now draggable
             const minBtn = this.shadowRoot.getElementById('uw-a11y-minimize');
             if (minBtn) minBtn.style.display = 'none';
+
+            // Delegated listeners for elements with data-uw-action.
+            // Replaces inline onclick / onkeydown / onchange handlers, which
+            // are blocked by strict CSPs that don't allow 'unsafe-inline'
+            // for script-src. Each action reads its own data-uw-* attributes.
+            if (!this._inlineActionDelegated) {
+                const dispatch = (el) => {
+                    const action = el.getAttribute('data-uw-action');
+                    if (!action || typeof this[action] !== 'function') return false;
+                    const arg  = el.getAttribute('data-uw-arg');
+                    const rule = el.getAttribute('data-uw-rule');
+                    const dir  = el.getAttribute('data-uw-dir');
+                    try {
+                        switch (action) {
+                            case 'navigateInstance':
+                                this[action](rule, parseInt(dir, 10));
+                                break;
+                            case 'highlightCurrentInstance':
+                            case 'toggleDetails':
+                            case 'toggleInstanceVerification':
+                                this[action](rule);
+                                break;
+                            case 'dismissIssue':
+                                this[action](rule, el);
+                                break;
+                            default:
+                                if (arg !== null && arg !== undefined) this[action](arg);
+                                else this[action]();
+                        }
+                    } catch (err) {
+                        console.warn('[Pinpoint] inline action ' + action + ' failed:', err && err.message);
+                    }
+                    return true;
+                };
+
+                this.shadowRoot.addEventListener('click', (e) => {
+                    const el = e.target && e.target.closest && e.target.closest('[data-uw-action]');
+                    if (!el) return;
+                    // Inputs/checkboxes dispatch on 'change' instead.
+                    if (el.tagName === 'INPUT' && el.type === 'checkbox') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dispatch(el);
+                });
+
+                this.shadowRoot.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    const el = e.target && e.target.closest && e.target.closest('[data-uw-action]');
+                    if (!el) return;
+                    // Native buttons already fire click on Enter/Space — let them.
+                    if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'A') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dispatch(el);
+                });
+
+                this.shadowRoot.addEventListener('change', (e) => {
+                    const el = e.target && e.target.closest && e.target.closest('[data-uw-action]');
+                    if (!el) return;
+                    if (el.tagName !== 'INPUT' || el.type !== 'checkbox') return;
+                    e.stopPropagation();
+                    dispatch(el);
+                });
+
+                this._inlineActionDelegated = true;
+            }
             // Enable drag on header
             this.initDrag();
             this.initNavigation();
@@ -6247,6 +6565,28 @@
             margin-right: 2px;
         }
 
+        /* Platform-specific tip appended to a recommendation. Visually
+           anchored to the surrounding "How to fix" block but distinct
+           enough that users notice it's tailored to their CMS. */
+        #uw-a11y-panel .uw-a11y-platform-tip {
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: rgba(79, 70, 229, 0.06);
+            border: 1px solid rgba(79, 70, 229, 0.18);
+            border-left: 3px solid #4f46e5;
+            border-radius: 6px;
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: #1f2937;
+        }
+        #uw-a11y-panel .uw-a11y-platform-tip strong {
+            color: #4f46e5;
+        }
+        #uw-a11y-panel .uw-a11y-platform-tip code {
+            background: rgba(79, 70, 229, 0.1);
+            border-color: rgba(79, 70, 229, 0.2);
+        }
+
         #uw-a11y-panel .uw-a11y-inline-action {
             display: inline-flex;
             align-items: center;
@@ -6274,7 +6614,14 @@
         #uw-a11y-panel .uw-a11y-inline-action svg {
             flex-shrink: 0;
         }
-        
+
+        /* Close button on the in-panel update notification */
+        .uw-a11y-update-close:hover,
+        .uw-a11y-update-close:focus-visible {
+            opacity: 1 !important;
+            background-color: rgba(255, 255, 255, 0.2) !important;
+        }
+
         /* Score explanation modal styles */
         .uw-a11y-score-explanation {
             position: fixed;
@@ -7352,8 +7699,25 @@
         }
 
         .uw-a11y-guided-see-all {
+            background: none;
+            border: none;
+            color: #4f46e5;
+            font: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 0;
+            text-decoration: underline;
+        }
+
+        .uw-a11y-guided-see-all:hover,
+        .uw-a11y-guided-see-all:focus-visible {
+            color: #3730a3;
+        }
+
+        /* "Show 3 more" link — secondary affordance below the walkthrough CTA. */
+        .uw-a11y-guided-more {
             display: block;
-            margin: 14px auto 0;
+            margin: 10px auto 0;
             background: none;
             border: none;
             color: #4f46e5;
@@ -7362,8 +7726,26 @@
             padding: 6px 4px;
         }
 
-        .uw-a11y-guided-see-all:hover {
+        .uw-a11y-guided-more:hover,
+        .uw-a11y-guided-more:focus-visible {
             text-decoration: underline;
+        }
+
+        /* Subdued note steering technical users to Advanced view without
+           tempting novices into it. Smaller text, muted color, inline link. */
+        .uw-a11y-guided-advanced-note {
+            margin: 14px 0 0;
+            padding: 10px 12px;
+            background: rgba(0,0,0,0.03);
+            border-radius: 8px;
+            color: #6b7280;
+            font-size: 12px;
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        .uw-a11y-guided-advanced-note .uw-a11y-link-btn {
+            color: #4f46e5;
         }
 
         .uw-a11y-guided-empty {
@@ -8344,8 +8726,13 @@
             //
             // LibGuides note: a guide page IS the content already; there's no admin
             // bar to exclude on the public side. So "Whole page" mode is a no-op
-            // (empty scope, empty exclude) and the only useful application is
-            // "Just the content" → scope to <main>, the actual guide body.
+            // (empty scope, empty exclude) and the useful application is
+            // "Just the content" → scope to the three Springshare public
+            // containers (#s-lib-public-header, #s-lib-public-nav,
+            // #s-lib-public-main). Together they cover guide branding, the
+            // guide nav, and the body — but not the surrounding institutional
+            // header/footer, the alert/popover utilities, or the back-to-top
+            // helper, which the guide author can't change.
             return {
                 wordpress:   { label: 'WordPress',   scope: '', exclude: '#wpadminbar, #adminmenuwrap, #adminmenuback, #adminmenumain, #wpfooter', contentScope: 'main, .entry-content, article',  hintMode: 'whole' },
                 drupal:      { label: 'Drupal',      scope: '', exclude: '#toolbar-administration, .toolbar-bar, .toolbar-tray',                  contentScope: 'main, .node__content, .region-content', hintMode: 'whole' },
@@ -8354,7 +8741,7 @@
                 shopify:     { label: 'Shopify',     scope: '', exclude: '.shopify-section--announcement-bar, #preview-bar-iframe, #admin-bar-iframe', contentScope: 'main, #MainContent',         hintMode: 'whole' },
                 joomla:      { label: 'Joomla',      scope: '', exclude: '#atum-sidebar, .atum-contract, #subhead-container',                     contentScope: 'main, #content',                  hintMode: 'whole' },
                 webflow:     { label: 'Webflow',     scope: '', exclude: '.w-webflow-badge',                                                      contentScope: 'main',                            hintMode: 'whole' },
-                libguides:   { label: 'LibGuides',   scope: '', exclude: '',                                                                       contentScope: 'main',                            hintMode: 'content' }
+                libguides:   { label: 'LibGuides',   scope: '', exclude: '',                                                                       contentScope: '#s-lib-public-header, #s-lib-public-nav, #s-lib-public-main', hintMode: 'content' }
             };
         },
 
@@ -12008,7 +12395,7 @@
                         <div style="display:flex;align-items:center;gap:12px;">
                             <span id="uw-a11y-dismissed-count" style="font-size:13px;color:#555;"></span>
                             <button id="uw-a11y-clear-dismissed" class="uw-a11y-btn uw-a11y-btn-secondary" style="font-size:12px;padding:4px 10px;" hidden
-                                onclick="window.uwAccessibilityChecker.clearDismissedIssues()">Restore all dismissed</button>
+                                data-uw-action="clearDismissedIssues">Restore all dismissed</button>
                         </div>
                     </div>
 
@@ -12430,7 +12817,7 @@
                   body: '<p>By default, Pinpoint scans the entire page. Use <strong>Scan Scope</strong> in Settings to limit the scan to specific areas.</p><ul><li>Enter one or more CSS selectors (comma-separated), e.g. <code>#main, .content-area</code>.</li><li>Or click <strong>Pick element</strong> to visually click an element on the page — its selector is added automatically.</li></ul><p>This is useful when you only want to audit a particular component or section without noise from the rest of the page.</p>' },
                 { id: 'help-exclude', cat: 'tool', title: 'Exclude Selectors',
                   keys: 'exclude selector ignore skip hide admin bar toolbar cms platform preset wordpress drupal',
-                  body: '<p>Exclude Selectors let you skip parts of the page during scanning. This is especially useful for CMS admin bars and toolbars you don\'t control.</p><ul><li>Enter CSS selectors in the Exclude field, e.g. <code>#wpadminbar, .admin-toolbar</code>.</li><li>Use <strong>Pick element</strong> to visually select elements to exclude.</li><li>Use the <strong>Platform Preset</strong> dropdown above to apply common scope/exclude rules for WordPress, Drupal, Squarespace, Shopify, Wix, Joomla, Webflow, or LibGuides. Presets are remembered per&nbsp;hostname, so picking <em>LibGuides</em> on a guide site sets scan scope to <code>main</code> only on that hostname; visiting a different site won\'t apply it.</li></ul><p>Pinpoint always excludes its own UI elements automatically.</p>' },
+                  body: '<p>Exclude Selectors let you skip parts of the page during scanning. This is especially useful for CMS admin bars and toolbars you don\'t control.</p><ul><li>Enter CSS selectors in the Exclude field, e.g. <code>#wpadminbar, .admin-toolbar</code>.</li><li>Use <strong>Pick element</strong> to visually select elements to exclude.</li><li>Use the <strong>Platform Preset</strong> dropdown above to apply common scope/exclude rules for WordPress, Drupal, Squarespace, Shopify, Wix, Joomla, Webflow, or LibGuides. Presets are remembered per&nbsp;hostname, so picking <em>LibGuides</em> on a guide site sets scan scope to the Springshare public containers (header, nav, main) only on that hostname; visiting a different site won\'t apply it.</li></ul><p>Pinpoint always excludes its own UI elements automatically.</p>' },
                 { id: 'help-pick-element', cat: 'tool', title: 'Pick Element',
                   keys: 'pick element picker click visual select cursor crosshair',
                   body: '<p>The Pick Element feature lets you visually click elements on the page instead of writing CSS selectors by hand.</p><ul><li>Click <strong>Pick element</strong> next to either the Scan Scope or Exclude Selectors field.</li><li>The settings panel fades and your cursor becomes a crosshair.</li><li>Hover over elements to see them highlighted with a tooltip showing their tag and class.</li><li>Click an element to add its selector to the field.</li><li>Press <strong>Escape</strong> or click <strong>Done picking</strong> to exit picker mode.</li></ul>' },
@@ -13249,7 +13636,7 @@
                 results.innerHTML = `
                     <div class="uw-a11y-issue info">
                         <h4>No issues to display</h4>
-                        <p>Adjust the filters above to show hidden groups${dismissedCount > 0 ? `, or <button class="uw-a11y-link-btn" onclick="window.uwAccessibilityChecker.clearDismissedIssues()">restore ${dismissedCount} dismissed issue${dismissedCount !== 1 ? 's' : ''}</button>` : ''}.</p>
+                        <p>Adjust the filters above to show hidden groups${dismissedCount > 0 ? `, or <button class="uw-a11y-link-btn" data-uw-action="clearDismissedIssues">restore ${dismissedCount} dismissed issue${dismissedCount !== 1 ? 's' : ''}</button>` : ''}.</p>
                     </div>
                 `;
                 return;
@@ -13257,7 +13644,7 @@
             const dismissedBanner = dismissed.size > 0 ? `
                 <div class="uw-a11y-dismissed-banner">
                     ${dismissed.size} issue${dismissed.size !== 1 ? 's' : ''} dismissed &mdash;
-                    <button class="uw-a11y-link-btn" onclick="window.uwAccessibilityChecker.clearDismissedIssues()">Restore all</button>
+                    <button class="uw-a11y-link-btn" data-uw-action="clearDismissedIssues">Restore all</button>
                 </div>
             ` : '';
             const generatedHtml = dismissedBanner + visibleRuleIds.map((ruleId) => {
@@ -13268,20 +13655,19 @@
                         <div class=\"uw-a11y-instance-nav\">
                             <span class=\"uw-a11y-instance-count\">Instance <span id=\"current-${this.sanitizeHtmlId(ruleId)}\">1</span> of ${issueGroup.length}</span>
                             <div class=\"uw-a11y-nav-buttons\">
-                                <button onclick=\"window.uwAccessibilityChecker.navigateInstance('${this.escapeJavaScript(ruleId)}', -1); event.stopPropagation();\" 
+                                <button data-uw-action=\"navigateInstance\" data-uw-rule=\"${this.escapeHtmlAttribute(ruleId)}\" data-uw-dir=\"-1\"
                                         id=\"prev-${this.sanitizeHtmlId(ruleId)}\" disabled>‹ Prev</button>
-                                <button onclick=\"window.uwAccessibilityChecker.navigateInstance('${this.escapeJavaScript(ruleId)}', 1); event.stopPropagation();\" 
+                                <button data-uw-action=\"navigateInstance\" data-uw-rule=\"${this.escapeHtmlAttribute(ruleId)}\" data-uw-dir=\"1\"
                                         id=\"next-${this.sanitizeHtmlId(ruleId)}\">Next ›</button>
                             </div>
                         </div>
                     ` : '';
                 const iconSvg = this.getIssueTypeIcon(firstIssue.type, 'issue');
                 return `
-                    <div class=\"uw-a11y-issue ${firstIssue.type} ${isManualReview && this.isRuleVerified(ruleId) ? 'checked' : ''}\" 
-                         onclick=\"window.uwAccessibilityChecker.highlightCurrentInstance('${this.escapeJavaScript(ruleId)}')\" 
-                         onkeydown=\"if(event.key==='Enter'||event.key===' '){event.preventDefault();window.uwAccessibilityChecker.highlightCurrentInstance('${this.escapeJavaScript(ruleId)}');}\"
+                    <div class=\"uw-a11y-issue ${firstIssue.type} ${isManualReview && this.isRuleVerified(ruleId) ? 'checked' : ''}\"
+                         data-uw-action=\"highlightCurrentInstance\" data-uw-rule=\"${this.escapeHtmlAttribute(ruleId)}\"
                          tabindex=\"0\"
-                         role=\"button\" 
+                         role=\"button\"
                          aria-label=\"Click to highlight ${this.escapeHtmlAttribute(firstIssue.title)} on the page${issueGroup.length > 1 ? ` (${issueGroup.length} instances)` : ''}\"
                          id=\"issue-${this.sanitizeHtmlId(ruleId)}\">
                          ${instanceNavigation}
@@ -13293,20 +13679,20 @@
                         <div class=\"uw-a11y-manual-check\">
                           <label class=\"uw-a11y-checkbox\">
                             <input type=\"checkbox\" id=\"check-${this.sanitizeHtmlId(ruleId)}\" ${this.isInstanceVerifiedAt(issueGroup, 0) ? 'checked' : ''}
-                                   onchange=\"window.uwAccessibilityChecker.toggleInstanceVerification('${this.escapeJavaScript(ruleId)}'); event.stopPropagation();\">
+                                   data-uw-action=\"toggleInstanceVerification\" data-uw-rule=\"${this.escapeHtmlAttribute(ruleId)}\">
                             <span class=\"uw-a11y-checkmark\"></span>
                             <span class=\"uw-a11y-check-label\" id=\"check-label-${this.sanitizeHtmlId(ruleId)}\">${this.getInstanceCheckLabel(issueGroup, 0)}</span>
                           </label>
                           ${issueGroup.length > 1 ? `<span class=\"uw-a11y-instance-progress\" id=\"progress-${this.sanitizeHtmlId(ruleId)}\">${this.countVerifiedInGroup(issueGroup)} of ${issueGroup.length} reviewed</span>` : ''}
                         </div>` : ''}
                         ${firstIssue.detailedInfo && firstIssue.detailedInfo.length > 0 ? `
-                            <button class=\"uw-a11y-details-toggle\" onclick=\"window.uwAccessibilityChecker.toggleDetails('${this.escapeJavaScript(ruleId)}'); event.stopPropagation();\">Show technical details</button>
+                            <button class=\"uw-a11y-details-toggle\" data-uw-action=\"toggleDetails\" data-uw-rule=\"${this.escapeHtmlAttribute(ruleId)}\">Show technical details</button>
                             <div class=\"uw-a11y-details\" id=\"details-${this.sanitizeHtmlId(ruleId)}\"><div id=\"detailed-content-${this.sanitizeHtmlId(ruleId)}\">${this.renderDetailedInfo(firstIssue.detailedInfo)}</div></div>
                         ` : ''}
                         <div class=\"issue-meta\"><div><strong>Impact:</strong> ${this.escapeHtmlContent(firstIssue.impact || 'unknown')}
                         ${firstIssue.helpUrl ? `<br><a href=\"${this.escapeUrl(firstIssue.helpUrl)}\" target=\"_blank\" class=\"learn-more\">Learn more about this rule</a>` : ''}
                         </div>
-                        <button class=\"uw-a11y-dismiss-btn\" title=\"Hide this issue from results\" onclick=\"window.uwAccessibilityChecker.dismissIssue('${this.escapeJavaScript(ruleId)}', this); event.stopPropagation();\">Dismiss</button>
+                        <button class=\"uw-a11y-dismiss-btn\" title=\"Hide this issue from results\" data-uw-action=\"dismissIssue\" data-uw-rule=\"${this.escapeHtmlAttribute(ruleId)}\">Dismiss</button>
                         </div>
                     </div>`;
             }).join('');
@@ -13316,7 +13702,7 @@
                 const issueGroup = groupedIssues[ruleId];
                 const firstIssue = issueGroup[0];
                 const recElement = this.shadowRoot.getElementById(`recommendation-${ruleId}`);
-                if (recElement) recElement.innerHTML = firstIssue.recommendation;
+                if (recElement) recElement.innerHTML = this.decorateRecommendation(firstIssue.recommendation, firstIssue.ruleId);
             });
         },
         
@@ -13700,30 +14086,55 @@
             const guided = this.shadowRoot.getElementById('uw-a11y-guided');
             if (!guided) return;
 
-            const top = this.getGuidedTopGroups(3);
+            const PAGE = 3;
+            if (this.guidedShownCount == null) this.guidedShownCount = PAGE;
+
+            // Pull the full ranked list of approachable groups so we can
+            // paginate. `Infinity` is truthy, so the existing limit logic
+            // returns the full set.
+            const all = this.getGuidedTopGroups(Infinity);
+            const shown = Math.min(this.guidedShownCount, all.length);
+            const top = all.slice(0, shown);
+            const remaining = all.length - shown;
             const totalFindings = this.issues.length;
+
+            // Count "technical-only" rule groups — issues that are real
+            // candidates but were filtered out of Guided because they need
+            // ARIA / markup expertise. Used to word the Advanced-view nudge.
+            const candidates = this.issues.filter(i => {
+                if (i.type === 'error') return true;
+                if (i.type === 'warning' && i.uniqueId && !this.checkedItems.has(i.uniqueId)) return true;
+                return false;
+            });
+            const dismissed = this.getDismissedIssues();
+            const approachableSet = this.getApproachableRules();
+            const grouped = this.groupIssuesByRule(candidates);
+            let technicalGroupCount = 0;
+            Object.keys(grouped).forEach(gid => {
+                if (dismissed.has(gid)) return;
+                const baseRuleId = ((grouped[gid][0] || {}).ruleId || '').toLowerCase();
+                if (!approachableSet.has(baseRuleId)) technicalGroupCount++;
+            });
 
             if (top.length === 0) {
                 // Either there are zero issues to act on, or all remaining ones
                 // are developer-level (ARIA wiring, landmark structure, etc.)
                 // and got filtered out of Guided. Word the message accordingly.
-                const candidateCount = this.issues.filter(i => {
-                    if (i.type === 'error') return true;
-                    if (i.type === 'warning' && i.uniqueId && !this.checkedItems.has(i.uniqueId)) return true;
-                    return false;
-                }).length;
+                const candidateCount = candidates.length;
                 const hasTechnicalOnly = candidateCount > 0;
                 const heading = hasTechnicalOnly ? 'Nothing common to fix here' : 'Looks great';
                 const body = hasTechnicalOnly
-                    ? `The remaining ${candidateCount} issue${candidateCount === 1 ? '' : 's'} ${candidateCount === 1 ? 'is' : 'are'} more technical (ARIA wiring, landmark structure, and similar). Open the Advanced view to review them.`
+                    ? `The remaining ${candidateCount} issue${candidateCount === 1 ? '' : 's'} ${candidateCount === 1 ? 'is' : 'are'} more technical (ARIA wiring, landmark structure, and similar) and best handled by a developer.`
                     : `No automated violations were found on this page.${totalFindings > 0 ? ' You may still want to review the manual-review and best-practice items.' : ''}`;
                 guided.innerHTML = `
                     <div class="uw-a11y-guided-empty${hasTechnicalOnly ? ' uw-a11y-guided-empty--neutral' : ''}">
                         <h3>${heading}</h3>
                         <p>${body}</p>
-                        ${totalFindings > 0
-                            ? `<button class="uw-a11y-link-btn uw-a11y-guided-see-all" type="button">See all ${totalFindings} findings →</button>`
-                            : ''}
+                        ${hasTechnicalOnly
+                            ? `<p class="uw-a11y-guided-advanced-note">If you're comfortable editing code, <button class="uw-a11y-link-btn uw-a11y-guided-see-all" type="button">open the Advanced view</button> to see them.</p>`
+                            : (totalFindings > 0
+                                ? `<p class="uw-a11y-guided-advanced-note"><button class="uw-a11y-link-btn uw-a11y-guided-see-all" type="button">Open Advanced view</button> to review manual-review and best-practice items.</p>`
+                                : '')}
                     </div>
                 `;
                 const seeAllEmpty = guided.querySelector('.uw-a11y-guided-see-all');
@@ -13758,11 +14169,27 @@
                 `;
             }).join('');
 
+            const moreCount = Math.min(PAGE, remaining);
+            const showMoreBtn = remaining > 0
+                ? `<button type="button" class="uw-a11y-link-btn uw-a11y-guided-more">Show ${moreCount} more ${moreCount === 1 ? 'issue' : 'issues'}${remaining > moreCount ? ` (${remaining} remaining)` : ''}</button>`
+                : '';
+
+            // Quieter advanced-view nudge. Only mention Advanced view in the
+            // context that justifies it (technical issues remaining or, once
+            // the user has paged through everything friendly, as a quiet
+            // exit). Phrased so it's clear that view is for developers.
+            let advancedNote = '';
+            if (technicalGroupCount > 0) {
+                advancedNote = `<p class="uw-a11y-guided-advanced-note">${technicalGroupCount} more technical issue${technicalGroupCount === 1 ? '' : 's'} ${technicalGroupCount === 1 ? 'requires' : 'require'} ARIA or markup-level fixes. <button type="button" class="uw-a11y-link-btn uw-a11y-guided-see-all">Open Advanced view</button> if you're comfortable editing code.</p>`;
+            } else if (remaining === 0) {
+                advancedNote = `<p class="uw-a11y-guided-advanced-note">Need full technical detail? <button type="button" class="uw-a11y-link-btn uw-a11y-guided-see-all">Open Advanced view</button>.</p>`;
+            }
+
             guided.innerHTML = `
                 <div class="uw-a11y-guided-wrap">
                     <div class="uw-a11y-guided-header">
                         <h3 class="uw-a11y-guided-heading">Top things to fix</h3>
-                        <span class="uw-a11y-guided-count">${top.length}</span>
+                        <span class="uw-a11y-guided-count">${top.length}${all.length > top.length ? ' of ' + all.length : ''}</span>
                     </div>
                     <div class="uw-a11y-guided-cards">${cards}</div>
                     <button type="button" class="uw-a11y-guided-walkthrough" id="uw-a11y-guided-walk">
@@ -13776,7 +14203,8 @@
                         </svg>
                         Walk me through these
                     </button>
-                    <button type="button" class="uw-a11y-link-btn uw-a11y-guided-see-all">See all ${totalFindings} findings →</button>
+                    ${showMoreBtn}
+                    ${advancedNote}
                 </div>
             `;
 
@@ -13790,6 +14218,22 @@
 
             const walkBtn = guided.querySelector('#uw-a11y-guided-walk');
             if (walkBtn) walkBtn.addEventListener('click', () => this.openWalkthrough(0));
+
+            const moreBtnEl = guided.querySelector('.uw-a11y-guided-more');
+            if (moreBtnEl) moreBtnEl.addEventListener('click', () => {
+                this.guidedShownCount = Math.min(all.length, (this.guidedShownCount || PAGE) + PAGE);
+                this.renderGuidedView();
+                // Re-fit the panel height to the new content.
+                if (this.currentView === 'results') {
+                    const content = this.shadowRoot.getElementById('uw-a11y-content');
+                    if (content) {
+                        const target = this.measureViewHeight('results');
+                        const max = this.getMaxContentHeight();
+                        if (target) content.style.height = Math.min(target, max) + 'px';
+                    }
+                }
+                this.playSound('ui');
+            });
 
             const seeAll = guided.querySelector('.uw-a11y-guided-see-all');
             if (seeAll) seeAll.addEventListener('click', () => this.setResultsViewMode('advanced'));
@@ -13837,7 +14281,9 @@
 
         // ── Walkthrough (one issue at a time) ──────────────────────────────
         openWalkthrough: function(startIndex) {
-            const top = this.getGuidedTopGroups(3);
+            // Walk through whatever is currently visible in the guided view
+            // (defaults to 3 if the user hasn't expanded the list).
+            const top = this.getGuidedTopGroups(this.guidedShownCount || 3);
             if (top.length === 0) return;
             this.walkthroughGroups = top;
             this.walkthroughIndex = Math.max(0, Math.min(startIndex || 0, top.length - 1));
@@ -13915,7 +14361,7 @@
                     ${instancePagerHtml}
                     <div class="uw-a11y-walk-fix">
                         <strong>How to fix</strong>
-                        <div class="uw-a11y-walk-fix-body">${first.recommendation || this.escapeHtmlContent(first.description || '')}</div>
+                        <div class="uw-a11y-walk-fix-body">${first.recommendation ? this.decorateRecommendation(first.recommendation, first.ruleId) : this.escapeHtmlContent(first.description || '')}</div>
                     </div>
                     ${first.description && first.recommendation ? `
                         <details class="uw-a11y-walk-details">
@@ -14054,6 +14500,10 @@
             const summary = this.shadowRoot.getElementById('uw-a11y-summary');
             const results = this.shadowRoot.getElementById('uw-a11y-results');
 
+            // Reset guided pagination on every fresh scan so reveals don't
+            // carry over between unrelated pages.
+            this.guidedShownCount = 3;
+
             // Initialize results view mode from settings on each render.
             this.resultsViewMode = this.getDefaultResultsView();
             const resultsView = this.shadowRoot.getElementById('uw-a11y-view-results');
@@ -14133,7 +14583,7 @@
                 <div role="status" style="background:rgba(79,70,229,0.07);border:1px solid rgba(79,70,229,0.25);border-radius:8px;padding:8px 12px;font-size:12px;color:#4f46e5;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
                     <span>${this.getScopeBannerHtml()}</span>
-                    <a href="#" onclick="window.uwAccessibilityChecker.showView('settings');return false;" style="margin-left:auto;font-size:11px;color:inherit;text-decoration:underline;">Edit scope</a>
+                    <a href="#" data-uw-action="showView" data-uw-arg="settings" style="margin-left:auto;font-size:11px;color:inherit;text-decoration:underline;">Edit scope</a>
                 </div>` : ''}
 
                 <!-- Accessible summary section -->
@@ -14149,7 +14599,7 @@
                                 <button class="info-btn" aria-label="What does Violations mean?" aria-describedby="tip-violations">i</button>
                                 <span id="tip-violations" class="tooltip" role="tooltip">These are accessibility failures that must be fixed.</span>
                             </div>
-                            <button id="toggle-errors" class="filter-toggle" aria-pressed="true" aria-label="Toggle showing violations" onclick="window.uwAccessibilityChecker.toggleFilter('errors')">
+                            <button id="toggle-errors" class="filter-toggle" aria-pressed="true" aria-label="Toggle showing violations" data-uw-action="toggleFilter" data-uw-arg="errors">
                                 <svg class="filter-icon icon-eye" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
                                 <svg class="filter-icon icon-eye-off" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l18 18M10.58 10.58A3 3 0 0012 15a3 3 0 002.42-4.42M9.88 4.24A10.94 10.94 0 0112 5c7 0 11 7 11 7a18.94 18.94 0 01-5.06 5.94M6.26 6.26A18.94 18.94 0 001 12s4 7 11 7a10.94 10.94 0 004.24-.88" stroke="currentColor" stroke-width="2"/></svg>
                             </button>
@@ -14160,7 +14610,7 @@
                                 <button class="info-btn" aria-label="What does Manual Review mean?" aria-describedby="tip-manual">i</button>
                                 <span id="tip-manual" class="tooltip" role="tooltip">These items need human verification.</span>
                             </div>
-                            <button id="toggle-warnings" class="filter-toggle" aria-pressed="true" aria-label="Toggle showing manual review" onclick="window.uwAccessibilityChecker.toggleFilter('warnings')">
+                            <button id="toggle-warnings" class="filter-toggle" aria-pressed="true" aria-label="Toggle showing manual review" data-uw-action="toggleFilter" data-uw-arg="warnings">
                                 <svg class="filter-icon icon-eye" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
                                 <svg class="filter-icon icon-eye-off" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l18 18M10.58 10.58A3 3 0 0012 15a3 3 0 002.42-4.42M9.88 4.24A10.94 10.94 0 0112 5c7 0 11 7 11 7a18.94 18.94 0 01-5.06 5.94M6.26 6.26A18.94 18.94 0 001 12s4 7 11 7a10.94 10.94 0 004.24-.88" stroke="currentColor" stroke-width="2"/></svg>
                             </button>
@@ -14171,7 +14621,7 @@
                                 <button class="info-btn" aria-label="What does Best Practices mean?" aria-describedby="tip-best">i</button>
                                 <span id="tip-best" class="tooltip" role="tooltip">Suggestions to improve usability and clarity.</span>
                             </div>
-                            <button id="toggle-info" class="filter-toggle" aria-pressed="true" aria-label="Toggle showing best practices" onclick="window.uwAccessibilityChecker.toggleFilter('info')">
+                            <button id="toggle-info" class="filter-toggle" aria-pressed="true" aria-label="Toggle showing best practices" data-uw-action="toggleFilter" data-uw-arg="info">
                                 <svg class="filter-icon icon-eye" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
                                 <svg class="filter-icon icon-eye-off" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 3l18 18M10.58 10.58A3 3 0 0012 15a3 3 0 002.42-4.42M9.88 4.24A10.94 10.94 0 0112 5c7 0 11 7 11 7a18.94 18.94 0 01-5.06 5.94M6.26 6.26A18.94 18.94 0 001 12s4 7 11 7a10.94 10.94 0 004.24-.88" stroke="currentColor" stroke-width="2"/></svg>
                             </button>
@@ -14421,7 +14871,6 @@
             try {
                 // Guard: only animate once per session
                 if (this.scoreAnimationPlayed) return;
-                if (this.prefersReducedMotion()) { this.scoreAnimationPlayed = true; return; } // Respect user preference
                 const scoreObj = this.axeResults && this.axeResults.score ? this.axeResults.score : null;
                 if (!scoreObj) return;
                 const finalScore = Math.max(0, Math.min(100, parseInt(scoreObj.score, 10) || 0));
@@ -14429,6 +14878,30 @@
                 const scoreCircle = this.shadowRoot.querySelector('.uw-a11y-score-circle');
                 const scoreNumber = this.shadowRoot.querySelector('.uw-a11y-score-number');
                 if (!scoreCircle || !scoreNumber || !scoreDial) return;
+
+                // Helper: paint the final state without animating (used for
+                // reduced-motion users and as a fallback if the animation
+                // never runs).
+                const paintFinal = () => {
+                    scoreNumber.textContent = String(finalScore);
+                    this.applyScoreVisual(scoreCircle, finalScore, finalScore / 100);
+                    const ratingText = finalScore >= 97 ? 'Excellent' :
+                        finalScore >= 90 ? 'Very Good - just a few issues to address' :
+                        finalScore >= 70 ? 'Good accessibility with room for improvement' :
+                        finalScore >= 50 ? 'Fair accessibility - several issues to address' :
+                        'Immediate attention needed';
+                    scoreDial.setAttribute('aria-label', `Accessibility score ${finalScore} out of 100, rated as ${ratingText}`);
+                };
+
+                // Respect prefers-reduced-motion, but still show the final
+                // value — earlier versions returned without painting, leaving
+                // the dial stuck at 0.
+                if (this.prefersReducedMotion()) {
+                    this.scoreAnimationPlayed = true;
+                    paintFinal();
+                    return;
+                }
+
                 // Mark as played now to avoid double-starts if called rapidly
                 this.scoreAnimationPlayed = true;
 
@@ -14584,7 +15057,7 @@
             const detailedContent = this.shadowRoot.getElementById(`detailed-content-${sanitizedRuleId}`);
 
             if (descElement) descElement.textContent = currentIssue.description.split('\n')[0];
-            if (recElement) recElement.innerHTML = currentIssue.recommendation;
+            if (recElement) recElement.innerHTML = this.decorateRecommendation(currentIssue.recommendation, currentIssue.ruleId);
             if (currentSpan) currentSpan.textContent = currentIndex + 1;
             if (detailedContent && currentIssue.detailedInfo) {
                 detailedContent.innerHTML = this.renderDetailedInfo(currentIssue.detailedInfo);
@@ -15113,16 +15586,21 @@
             return 0;
         },
 
+        // Hide the update-available notification (data-uw-action handler)
+        dismissUpdateNotification: function() {
+            const note = this.shadowRoot && this.shadowRoot.getElementById('uw-a11y-update-notification');
+            if (note) note.style.display = 'none';
+        },
+
         // Show update notification
         showUpdateNotification: function(newVersion, releaseUrl) {
             const notification = document.createElement('div');
             notification.id = 'uw-a11y-update-notification';
             notification.innerHTML = `
                 <div style="background: #56ab30; color: white; padding: 12px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; position: relative;">
-                    <button onclick="this.parentElement.parentElement.style.display='none'" 
-                            style="position: absolute; top: 8px; right: 8px; background: none; border: none; color: white; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; opacity: 0.8; transition: opacity 0.2s;"
-                            onmouseover="this.style.opacity='1'; this.style.backgroundColor='rgba(255,255,255,0.2)'"
-                            onmouseout="this.style.opacity='0.8'; this.style.backgroundColor='transparent'">
+                    <button data-uw-action="dismissUpdateNotification"
+                            class="uw-a11y-update-close"
+                            style="position: absolute; top: 8px; right: 8px; background: none; border: none; color: white; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; opacity: 0.8; transition: opacity 0.2s, background-color 0.2s;">
                         ✕
                     </button>
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
