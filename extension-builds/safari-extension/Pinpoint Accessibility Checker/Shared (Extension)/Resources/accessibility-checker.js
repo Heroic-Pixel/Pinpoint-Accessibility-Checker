@@ -9,7 +9,7 @@
     
             // Main accessibility checker object
         window.uwAccessibilityChecker = {
-            version: '1.7.2', // Current version
+            version: '1.7.3', // Current version
             websiteUrl: 'https://pinpoint.heroicpixel.com/', // Main website URL
             legacyDomainUrl: 'https://althe3rd.github.io/Pinpoint/', // Legacy domain for transition
             issues: [],
@@ -4264,6 +4264,13 @@
                                 </div>
 
                                 <div id="uw-a11y-inspector-detail" hidden>
+                                    <div id="uw-a11y-inspector-return-banner" class="uw-a11y-inspector-return-banner" hidden>
+                                        <button type="button" id="uw-a11y-inspector-return-btn" class="uw-a11y-inspector-return-btn">
+                                            <svg fill="none" height="16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+                                            <span>Back to your results</span>
+                                        </button>
+                                        <span class="uw-a11y-inspector-return-hint">You opened this from an issue's recommended fix.</span>
+                                    </div>
                                     <div class="uw-a11y-inspector-detail-header">
                                         <button type="button" id="uw-a11y-inspector-back" class="uw-a11y-btn uw-a11y-btn-secondary uw-a11y-inspector-back-btn" aria-label="Back to inspector tools">
                                             <svg class="feather feather-chevron-left" fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
@@ -4589,6 +4596,11 @@
                     if (!el) return;
                     // Inputs/checkboxes dispatch on 'change' instead.
                     if (el.tagName === 'INPUT' && el.type === 'checkbox') return;
+                    // If the click landed on a nested interactive element (link, button,
+                    // or its own action element) inside this action element, let that
+                    // element handle the click instead of hijacking it for the parent.
+                    const nested = e.target.closest && e.target.closest('a[href], button, [data-uw-action]');
+                    if (nested && nested !== el && el.contains(nested)) return;
                     e.preventDefault();
                     e.stopPropagation();
                     dispatch(el);
@@ -4600,6 +4612,10 @@
                     if (!el) return;
                     // Native buttons already fire click on Enter/Space — let them.
                     if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'A') return;
+                    // If focus is on a nested link/button inside the action element,
+                    // let the native keyboard activation fire its own click instead.
+                    const nested = e.target.closest && e.target.closest('a[href], button');
+                    if (nested && nested !== el && el.contains(nested)) return;
                     e.preventDefault();
                     e.stopPropagation();
                     dispatch(el);
@@ -6891,6 +6907,56 @@
             gap: 10px;
             flex-wrap: wrap;
             margin-bottom: 1rem;
+        }
+
+        .uw-a11y-inspector-return-banner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+        }
+
+        .uw-a11y-inspector-return-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #4f46e5;
+            color: #ffffff;
+            border: 1px solid #4338ca;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            line-height: 1;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .uw-a11y-inspector-return-btn:hover {
+            background: #4338ca;
+        }
+
+        .uw-a11y-inspector-return-btn:focus-visible {
+            outline: 2px solid #4338ca;
+            outline-offset: 2px;
+        }
+
+        .uw-a11y-inspector-return-btn svg {
+            flex-shrink: 0;
+        }
+
+        .uw-a11y-inspector-return-hint {
+            font-size: 12px;
+            color: #4338ca;
+            line-height: 1.3;
+            flex: 1;
+            min-width: 0;
         }
 
         .uw-a11y-inspector-back-btn,
@@ -9777,6 +9843,7 @@
         // Inspector hub ↔ detail (heavy tools open on a second screen within the Inspector view)
         _applyInspectorHubLayout: function() {
             this.inspectorSubView = null;
+            this._inspectorReturnView = null;
             const root = this.shadowRoot;
             if (!root) return;
             const hub = root.getElementById('uw-a11y-inspector-hub');
@@ -9789,6 +9856,8 @@
             });
             const h = root.getElementById('uw-a11y-inspector-detail-heading');
             if (h) h.textContent = '';
+            const banner = root.getElementById('uw-a11y-inspector-return-banner');
+            if (banner) banner.setAttribute('hidden', '');
         },
 
         resetInspectorToHub: function() {
@@ -9815,7 +9884,9 @@
         // for the sentinel patterns that produce these buttons.
         openContrastChecker: function(node) {
             try {
+                const origin = this.currentView;
                 this.showView('inspector');
+                this._inspectorReturnView = (origin && origin !== 'inspector') ? origin : null;
                 this.openInspectorDetail('contrast');
                 if (node) this.prefillContrastFromNode(node);
             } catch (e) {
@@ -9827,7 +9898,9 @@
             try {
                 const valid = { outline: 1, links: 1, cvd: 1, alt: 1, contrast: 1 };
                 if (!valid[name]) return;
+                const origin = this.currentView;
                 this.showView('inspector');
+                this._inspectorReturnView = (origin && origin !== 'inspector') ? origin : null;
                 this.openInspectorDetail(name);
             } catch (e) {
                 console.warn('[Pinpoint] openInspectorTool failed:', e && e.message);
@@ -9905,6 +9978,12 @@
 
             const heading = root.getElementById('uw-a11y-inspector-detail-heading');
             if (heading) heading.textContent = titles[panelId];
+
+            const banner = root.getElementById('uw-a11y-inspector-return-banner');
+            if (banner) {
+                if (this._inspectorReturnView) banner.removeAttribute('hidden');
+                else banner.setAttribute('hidden', '');
+            }
 
             this.inspectorSubView = panelId;
             this._autoActivateInspectorDetailPanel(panelId);
@@ -10111,6 +10190,15 @@
                 backBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     this.closeInspectorDetail();
+                });
+            }
+
+            const returnBtn = this.shadowRoot.getElementById('uw-a11y-inspector-return-btn');
+            if (returnBtn) {
+                returnBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const target = this._inspectorReturnView || 'results';
+                    this.showView(target);
                 });
             }
 

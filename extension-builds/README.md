@@ -46,7 +46,7 @@ This directory contains browser extension packages for the Pinpoint Accessibilit
 
 ## Version
 
-Current version: 1.7.2
+Current version: 1.7.3
 
 ## Building
 
