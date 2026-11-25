@@ -35,6 +35,7 @@ Line numbers drift as the file grows; use them as a starting point and then sear
 | Navigation between views (results / settings / help / inspector) | 6000–6113 | [`initNavigation`](accessibility-checker.js#L6000), [`showView`](accessibility-checker.js#L6029) |
 | Scope filters (include/exclude selectors, WCAG level) | 6114–6268 | [`getEffectiveExcludeSelectors`](accessibility-checker.js#L6155), [`buildAxeContext`](accessibility-checker.js#L6178), [`buildWcagTags`](accessibility-checker.js#L6234) |
 | Inspector tools (outline, tab order viz) | 6269–6900 | [`initInspectorTools`](accessibility-checker.js#L6269), [`toggleOutlineView`](accessibility-checker.js#L6308), [`toggleTabOrderVisualization`](accessibility-checker.js#L6440) |
+| Interaction observer — user-facing name; code still uses `watch` (Inspector → observes the page while the user operates widgets, scans each new state, checks focus/ARIA behaviour). [`detectWatchCandidates`](accessibility-checker.js) finds likely widgets after each scan to drive the purple "Test interactions" hint in results and the "Found on this page" checklist | 10600–11880 | [`initWatchMode`](accessibility-checker.js#L10600), [`runWatchSettle`](accessibility-checker.js#L11108), [`closeWatchState`](accessibility-checker.js#L11584), [`renderWatchResults`](accessibility-checker.js#L11754) |
 | Settings UI rendering | 6903–7270 | [`renderSettings`](accessibility-checker.js#L6915), [`resetSettingsToDefaults`](accessibility-checker.js#L6903) |
 | Help content + rendering | 7277–7725 | [`getHelpTopics`](accessibility-checker.js#L7277), [`renderHelp`](accessibility-checker.js#L7596) |
 | Element picker (click-to-scope) | 7726–8020 | [`startPickerMode`](accessibility-checker.js#L7726), [`generateSelectorForElement`](accessibility-checker.js#L7897) |
@@ -88,6 +89,7 @@ npm run build:safari:appstore     # Safari (App Store variant)
 | Bookmarklet landing page + the actual draggable bookmarklet link | [index.html](index.html) |
 | Dev test page with embedded "run latest" button | [test-page.html](test-page.html) |
 | Standalone contrast/image-contrast test fixtures | [contrast-test.html](contrast-test.html), [image-contrast-test.html](image-contrast-test.html) |
+| Interactive component fixtures (good/broken accordions, dialogs, tabs, menus, status messages, carousel) for the Interaction observer — loads the unminified source directly, no build needed | [interactive-test.html](interactive-test.html) |
 | Chrome manifest, popup, background, content script | [extension/chrome/](extension/chrome/) |
 | Firefox manifest (MV2), popup, background, content script | [extension/firefox/](extension/firefox/) |
 | Packaged extension artifacts | [extension-builds/](extension-builds/) |

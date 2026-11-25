@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinpoint — Interactive Component Test Fixtures</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.5;
+            color: #1f2937;
+            background: #f8fafc;
+            margin: 0;
+        }
+        header.page-header, main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+        header.page-header { padding-bottom: 0; }
+        h1 { margin: 0 0 8px; }
+        .intro { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 16px; }
+        .intro ol { margin: 8px 0 0; padding-left: 20px; }
+        .run-btn {
+            display: inline-block; margin-top: 12px; padding: 10px 16px; border: none; border-radius: 6px;
+            background: #4338ca; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+        }
+        .run-btn:focus-visible { outline: 3px solid #1e1b4b; outline-offset: 2px; }
+        section.fixture { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+        section.fixture > h2 { margin-top: 0; }
+        .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+        .case { border: 1px dashed #cbd5e1; border-radius: 8px; padding: 12px; }
+        .case h3 { margin: 0 0 4px; font-size: 16px; }
+        .chip { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+        .chip.good { background: #dcfce7; color: #14532d; }
+        .chip.bad { background: #fee2e2; color: #7f1d1d; }
+        .expect { font-size: 13px; color: #475569; margin: 0 0 10px; }
+        button.ui, .fake-btn {
+            font: inherit; padding: 8px 12px; border: 1px solid #94a3b8; border-radius: 6px; background: #f1f5f9; color: #0f172a; cursor: pointer;
+        }
+        button.ui:focus-visible { outline: 3px solid #4338ca; outline-offset: 2px; }
+
+        /* Accordions */
+        .acc-heading { margin: 0; font-size: 15px; }
+        .acc-heading button { width: 100%; text-align: left; margin-top: 6px; }
+        .acc-panel { padding: 8px 12px; border-left: 3px solid #cbd5e1; margin: 4px 0 0; }
+        .bad-acc .acc-trigger { margin-top: 6px; padding: 8px 12px; border: 1px solid #94a3b8; border-radius: 6px; background: #f1f5f9; cursor: pointer; }
+        .bad-acc .acc-body { display: none; padding: 8px 12px; border-left: 3px solid #cbd5e1; }
+        .bad-acc .item.open .acc-body { display: block; }
+        .collapse-acc .acc-body { max-height: 0; overflow: hidden; transition: max-height .3s ease; padding: 0 12px; border-left: 3px solid #cbd5e1; }
+        .collapse-acc .acc-body.open { max-height: 200px; }
+
+        /* Gallery thumbnails */
+        .thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .thumbs img { width: 96px; height: 64px; display: block; border-radius: 4px; }
+
+        /* Broken lightbox: fades with opacity only, never display:none */
+        .lb-overlay {
+            position: fixed; inset: 0; background: rgba(15, 23, 42, .85); display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity .25s ease; z-index: 1000;
+        }
+        .lb-overlay.is-open { opacity: 1; pointer-events: auto; }
+        .lb-inner { background: #fff; padding: 16px; border-radius: 8px; max-width: 90vw; text-align: center; position: relative; }
+        .lb-inner img { width: 480px; max-width: 80vw; height: auto; display: block; }
+        .lb-close { position: absolute; top: 4px; right: 10px; font-size: 24px; cursor: pointer; color: #334155; }
+
+        /* Native dialog */
+        dialog { border: none; border-radius: 10px; padding: 20px; max-width: 420px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+        dialog::backdrop { background: rgba(15, 23, 42, .6); }
+
+        /* Partially-right ARIA dialog */
+        .aria-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .aria-modal-backdrop[hidden] { display: none; }
+        .aria-modal-box { background: #fff; padding: 20px; border-radius: 10px; max-width: 420px; }
+
+        /* Tabs */
+        [role="tablist"] { display: flex; gap: 4px; border-bottom: 2px solid #cbd5e1; }
+        [role="tab"] { font: inherit; padding: 6px 12px; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 6px 6px 0 0; background: #f1f5f9; cursor: pointer; }
+        [role="tab"][aria-selected="true"] { background: #fff; font-weight: 700; }
+        [role="tab"]:focus-visible { outline: 3px solid #4338ca; outline-offset: 1px; }
+        [role="tabpanel"] { padding: 10px 4px; }
+        .bad-tabs .tab-row { display: flex; gap: 4px; border-bottom: 2px solid #cbd5e1; }
+        .bad-tabs .t { padding: 6px 12px; border: 1px solid #cbd5e1; border-bottom: none; border-radius: 6px 6px 0 0; background: #f1f5f9; cursor: pointer; }
+        .bad-tabs .t.active { background: #fff; font-weight: 700; }
+        .bad-tabs .p { display: none; padding: 10px 4px; }
+        .bad-tabs .p.active { display: block; }
+
+        /* Menus */
+        .menu-list { list-style: none; padding: 8px; margin: 6px 0 0; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+        .menu-list a { display: block; padding: 4px 6px; color: #1e40af; }
+        .offcanvas {
+            position: fixed; top: 0; left: 0; height: 100vh; width: 260px; background: #0f172a; color: #fff; padding: 20px;
+            transform: translateX(-100%); transition: transform .3s ease; z-index: 999;
+        }
+        .offcanvas.open { transform: translateX(0); }
+        .offcanvas a { color: #bfdbfe; display: block; padding: 6px 0; }
+
+        /* Carousel */
+        .carousel { position: relative; border-radius: 8px; overflow: hidden; }
+        .slide { display: none; padding: 28px 16px; color: #fff; font-size: 18px; font-weight: 600; text-align: center; }
+        .slide.active { display: block; }
+        .slide:nth-child(1) { background: #1e3a8a; }
+        .slide:nth-child(2) { background: #14532d; }
+        .slide:nth-child(3) { background: #7c2d12; }
+        .carousel-controls { display: flex; gap: 8px; margin-top: 8px; }
+
+        /* Lists */
+        .item-list { list-style: none; padding: 0; margin: 0; }
+        .item-list li { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #e2e8f0; }
+        .cart-msg { font-size: 14px; margin: 8px 0 0; min-height: 1.5em; color: #14532d; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <header class="page-header">
+        <h1>Interactive component fixtures</h1>
+        <div class="intro">
+            <p><strong>Use this page to test Pinpoint's Interaction observer.</strong> Each section has a working version and a broken version of the same component.</p>
+            <ol>
+                <li>Load Pinpoint with the button below. It loads <code>accessibility-checker.js</code> straight from this folder, so you don't need to rebuild first.</li>
+                <li>Open <strong>Inspector → Interaction observer</strong> and select <strong>Start observing</strong>.</li>
+                <li>Use each component, with the keyboard where you can. Open it, press Tab inside it, close it with Escape. Compare the cards Pinpoint shows with the “Expect” notes.</li>
+            </ol>
+            <button type="button" class="run-btn" id="run-pinpoint">Load Pinpoint (local source)</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- 1. Accordions -->
+        <section class="fixture" aria-labelledby="acc-h">
+            <h2 id="acc-h">1. Accordions</h2>
+            <div class="pair">
+                <div class="case">
+                    <h3>Accessible accordion <span class="chip good">Good</span></h3>
+                    <p class="expect">Expect: control passes, aria-expanded becomes true then false, hidden content leaves the Tab order.</p>
+                    <h4 class="acc-heading">
+                        <button type="button" class="ui" aria-expanded="false" aria-controls="acc-good-1" id="acc-good-1-btn">Shipping information</button>
+                    </h4>
+                    <div id="acc-good-1" class="acc-panel" role="region" aria-labelledby="acc-good-1-btn" hidden>
+                        <p>Orders ship within two business days. <a href="#acc-h">Read the shipping policy</a>.</p>
+                    </div>
+                    <h4 class="acc-heading">
+                        <button type="button" class="ui" aria-expanded="false" aria-controls="acc-good-2" id="acc-good-2-btn">Returns</button>
+                    </h4>
+                    <div id="acc-good-2" class="acc-panel" role="region" aria-labelledby="acc-good-2-btn" hidden>
+                        <p>Return any item within 30 days. <a href="#acc-h">Start a return</a>.</p>
+                    </div>
+                </div>
+
+                <div class="case bad-acc">
+                    <h3>Div-based accordion <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: “isn’t a button”, “can’t be reached with the Tab key”, missing aria-expanded. You can only open it with the mouse.</p>
+                    <div class="item">
+                        <div class="acc-trigger">Shipping information</div>
+                        <div class="acc-body"><p>Orders ship within two business days. <a href="#acc-h">Read the shipping policy</a>.</p></div>
+                    </div>
+                    <div class="item">
+                        <div class="acc-trigger">Returns</div>
+                        <div class="acc-body"><p>Return any item within 30 days. <a href="#acc-h">Start a return</a>.</p></div>
+                    </div>
+                </div>
+
+                <div class="case collapse-acc">
+                    <h3>Collapsed with max-height <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: opening passes. After closing, “hidden elements are still in the Tab order”, because max-height:0 hides the links but they can still be focused.</p>
+                    <button type="button" class="ui" aria-expanded="false" aria-controls="acc-mh" id="acc-mh-btn">Product details</button>
+                    <div id="acc-mh" class="acc-body">
+                        <p>Made from recycled aluminium. <a href="#acc-h">Materials</a> · <a href="#acc-h">Care guide</a></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Dialogs and lightboxes -->
+        <section class="fixture" aria-labelledby="dlg-h">
+            <h2 id="dlg-h">2. Dialogs and lightboxes</h2>
+            <div class="pair">
+                <div class="case">
+                    <h3>Native &lt;dialog&gt; <span class="chip good">Good</span></h3>
+                    <p class="expect">Expect: everything passes. Focus moves in, Tab stays inside, Escape closes it, focus returns to the button.</p>
+                    <button type="button" class="ui" id="open-native">Edit profile</button>
+                    <dialog id="native-dialog" aria-labelledby="native-title">
+                        <h3 id="native-title">Edit profile</h3>
+                        <form method="dialog">
+                            <p><label>Display name <input type="text" name="n" value="Sam"></label></p>
+                            <p><label>Email <input type="email" name="e" value="sam@example.com"></label></p>
+                            <button type="submit" class="ui">Save</button>
+                            <button type="button" class="ui" id="native-close">Close</button>
+                        </form>
+                    </dialog>
+                </div>
+
+                <div class="case">
+                    <h3>Image lightbox <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: “isn’t marked up as a dialog”, no labelled close button, focus stays behind it, Escape does nothing, and after closing the hidden “Download” link is still in the Tab order.</p>
+                    <div class="thumbs">
+                        <a href="#lightbox" class="lb-thumb" data-caption="Harbour at dawn"><img alt="Harbour at dawn" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 64'%3E%3Crect width='96' height='64' fill='%231e3a8a'/%3E%3Ccircle cx='70' cy='20' r='10' fill='%23fbbf24'/%3E%3C/svg%3E"></a>
+                        <a href="#lightbox" class="lb-thumb" data-caption="Forest trail"><img alt="Forest trail" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 64'%3E%3Crect width='96' height='64' fill='%2314532d'/%3E%3Cpath d='M10 60 30 20 50 60Z' fill='%2322c55e'/%3E%3C/svg%3E"></a>
+                    </div>
+                    <div class="lb-overlay" id="lightbox">
+                        <div class="lb-inner">
+                            <span class="lb-close" id="lb-close">×</span>
+                            <img id="lb-img" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 64'%3E%3Crect width='96' height='64' fill='%2364748b'/%3E%3C/svg%3E">
+                            <p id="lb-caption"></p>
+                            <a href="#dlg-h">Download full size</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="case">
+                    <h3>ARIA dialog, half done <span class="chip bad">Partial</span></h3>
+                    <p class="expect">Expect: role, name and the move into the dialog pass. Tabbing out of the dialog fails, Escape fails, and focus isn’t returned to the button.</p>
+                    <button type="button" class="ui" id="open-aria">Subscribe to newsletter</button>
+                    <div class="aria-modal-backdrop" id="aria-backdrop" hidden>
+                        <div class="aria-modal-box" role="dialog" aria-modal="true" aria-labelledby="aria-title" id="aria-dialog">
+                            <h3 id="aria-title">Get our newsletter</h3>
+                            <p><label>Email <input type="email" id="aria-email"></label></p>
+                            <button type="button" class="ui" id="aria-subscribe">Subscribe</button>
+                            <button type="button" class="ui" id="aria-close">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Tabs -->
+        <section class="fixture" aria-labelledby="tabs-h">
+            <h2 id="tabs-h">3. Tabs</h2>
+            <div class="pair">
+                <div class="case">
+                    <h3>ARIA tabs <span class="chip good">Good</span></h3>
+                    <p class="expect">Expect: aria-selected and tabpanel checks pass. Use the arrow keys to switch tabs.</p>
+                    <div role="tablist" aria-label="Plan details">
+                        <button role="tab" id="tab-1" aria-selected="true" aria-controls="panel-1" tabindex="0">Features</button>
+                        <button role="tab" id="tab-2" aria-selected="false" aria-controls="panel-2" tabindex="-1">Pricing</button>
+                        <button role="tab" id="tab-3" aria-selected="false" aria-controls="panel-3" tabindex="-1">Support</button>
+                    </div>
+                    <div role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0"><p>Unlimited projects and 50 GB storage.</p></div>
+                    <div role="tabpanel" id="panel-2" aria-labelledby="tab-2" tabindex="0" hidden><p>$12 per user per month, billed yearly.</p></div>
+                    <div role="tabpanel" id="panel-3" aria-labelledby="tab-3" tabindex="0" hidden><p>Email support with a one-day response time.</p></div>
+                </div>
+
+                <div class="case bad-tabs">
+                    <h3>Div “tabs” <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: the tabs are reported as non-buttons that can’t be reached with the keyboard, and without aria-expanded.</p>
+                    <div class="tab-row">
+                        <div class="t active" data-panel="bp1">Features</div>
+                        <div class="t" data-panel="bp2">Pricing</div>
+                        <div class="t" data-panel="bp3">Support</div>
+                    </div>
+                    <div class="p active" id="bp1"><p>Unlimited projects and 50 GB storage.</p></div>
+                    <div class="p" id="bp2"><p>$12 per user per month, billed yearly.</p></div>
+                    <div class="p" id="bp3"><p>Email support with a one-day response time.</p></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Menus -->
+        <section class="fixture" aria-labelledby="menu-h">
+            <h2 id="menu-h">4. Menus</h2>
+            <div class="pair">
+                <div class="case">
+                    <h3>Disclosure menu <span class="chip good">Good</span></h3>
+                    <p class="expect">Expect: aria-expanded becomes true then false, and the links are removed from the Tab order when the menu closes.</p>
+                    <nav aria-label="Account">
+                        <button type="button" class="ui" aria-expanded="false" aria-controls="acct-menu" id="acct-btn">Account</button>
+                        <ul class="menu-list" id="acct-menu" hidden>
+                            <li><a href="#menu-h">Orders</a></li>
+                            <li><a href="#menu-h">Settings</a></li>
+                            <li><a href="#menu-h">Sign out</a></li>
+                        </ul>
+                    </nav>
+                </div>
+
+                <div class="case">
+                    <h3>Off-canvas menu <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: “link used as a button”, missing aria-expanded, and after closing, the off-screen links are still in the Tab order.</p>
+                    <a href="#" id="offcanvas-toggle">☰ Menu</a>
+                    <div class="offcanvas" id="offcanvas">
+                        <p><strong>Site menu</strong></p>
+                        <a href="#menu-h">Home</a>
+                        <a href="#menu-h">Shop</a>
+                        <a href="#menu-h">About</a>
+                        <a href="#" id="offcanvas-close">Close menu</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. Status messages -->
+        <section class="fixture" aria-labelledby="status-h">
+            <h2 id="status-h">5. Status messages</h2>
+            <div class="pair">
+                <div class="case">
+                    <h3>Live region <span class="chip good">Good</span></h3>
+                    <p class="expect">Expect: “Text updates are in a live region and will be announced.”</p>
+                    <button type="button" class="ui" id="add-good">Add to cart</button>
+                    <p class="cart-msg" role="status" id="msg-good"></p>
+                </div>
+                <div class="case">
+                    <h3>Silent update <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: “text update won’t be announced” (4.1.3).</p>
+                    <button type="button" class="ui" id="add-bad">Add to cart</button>
+                    <p class="cart-msg" id="msg-bad"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. Removing items -->
+        <section class="fixture" aria-labelledby="remove-h">
+            <h2 id="remove-h">6. Removing items</h2>
+            <div class="pair">
+                <div class="case">
+                    <h3>Focus managed <span class="chip good">Good</span></h3>
+                    <p class="expect">Expect: no “Focus lost” card. Use the keyboard to press Remove, and focus moves to the next item.</p>
+                    <ul class="item-list" id="list-good">
+                        <li><span>Blue mug</span> <button type="button" class="ui">Remove<span class="vh"> Blue mug</span></button></li>
+                        <li><span>Red scarf</span> <button type="button" class="ui">Remove<span class="vh"> Red scarf</span></button></li>
+                        <li><span>Green notebook</span> <button type="button" class="ui">Remove<span class="vh"> Green notebook</span></button></li>
+                    </ul>
+                </div>
+                <div class="case">
+                    <h3>Focus dropped <span class="chip bad">Broken</span></h3>
+                    <p class="expect">Expect: a “Focus lost” card. Use the keyboard; focus goes back to the top of the page.</p>
+                    <ul class="item-list" id="list-bad">
+                        <li><span>Blue mug</span> <button type="button" class="ui">Remove</button></li>
+                        <li><span>Red scarf</span> <button type="button" class="ui">Remove</button></li>
+                        <li><span>Green notebook</span> <button type="button" class="ui">Remove</button></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7. Carousel -->
+        <section class="fixture" aria-labelledby="car-h">
+            <h2 id="car-h">7. Auto-rotating carousel</h2>
+            <div class="case">
+                <h3>No pause control <span class="chip bad">Broken</span></h3>
+                <p class="expect">Expect: wait about 10 seconds without touching anything. You get an “Auto-changing” card with 2.2.2 warnings (no pause button). The Next and Previous buttons create “Slides” cards.</p>
+                <div class="carousel" id="carousel">
+                    <div class="slide active">Spring sale — 20% off</div>
+                    <div class="slide">Free shipping over $50</div>
+                    <div class="slide">New arrivals every week</div>
+                </div>
+                <div class="carousel-controls">
+                    <button type="button" class="ui" id="car-prev" aria-label="Previous slide">‹</button>
+                    <button type="button" class="ui" id="car-next" aria-label="Next slide">›</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <style>.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }</style>
+    <script>
+    (function () {
+        // Load Pinpoint from the local source file
+        document.getElementById('run-pinpoint').addEventListener('click', function () {
+            if (window.uwAccessibilityChecker) { window.uwAccessibilityChecker.remove(); return; }
+            var s = document.createElement('script');
+            s.src = 'accessibility-checker.js?t=' + Date.now();
+            document.body.appendChild(s);
+        });
+
+        // 1a. Good accordion
+        document.querySelectorAll('.acc-heading button').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var panel = document.getElementById(btn.getAttribute('aria-controls'));
+                var open = btn.getAttribute('aria-expanded') === 'true';
+                btn.setAttribute('aria-expanded', String(!open));
+                panel.hidden = open;
+            });
+        });
+
+        // 1b. Broken div accordion (mouse only)
+        document.querySelectorAll('.bad-acc .acc-trigger').forEach(function (t) {
+            t.addEventListener('click', function () { t.parentElement.classList.toggle('open'); });
+        });
+
+        // 1c. max-height accordion (aria right, focus leak on close)
+        var mhBtn = document.getElementById('acc-mh-btn');
+        mhBtn.addEventListener('click', function () {
+            var body = document.getElementById('acc-mh');
+            var open = mhBtn.getAttribute('aria-expanded') === 'true';
+            mhBtn.setAttribute('aria-expanded', String(!open));
+            body.classList.toggle('open', !open);
+        });
+
+        // 2a. Native dialog
+        var nd = document.getElementById('native-dialog');
+        document.getElementById('open-native').addEventListener('click', function () { nd.showModal(); });
+        document.getElementById('native-close').addEventListener('click', function () { nd.close(); });
+
+        // 2b. Broken lightbox
+        var lb = document.getElementById('lightbox');
+        document.querySelectorAll('.lb-thumb').forEach(function (a) {
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                var img = a.querySelector('img');
+                document.getElementById('lb-img').src = img.src;
+                document.getElementById('lb-caption').textContent = a.getAttribute('data-caption');
+                lb.classList.add('is-open');
+            });
+        });
+        document.getElementById('lb-close').addEventListener('click', function () { lb.classList.remove('is-open'); });
+        lb.addEventListener('click', function (e) { if (e.target === lb) lb.classList.remove('is-open'); });
+
+        // 2c. Half-done ARIA dialog: moves focus in, but no trap / Escape / return
+        var ab = document.getElementById('aria-backdrop');
+        document.getElementById('open-aria').addEventListener('click', function () {
+            ab.hidden = false;
+            setTimeout(function () { document.getElementById('aria-email').focus(); }, 50);
+        });
+        document.getElementById('aria-close').addEventListener('click', function () { ab.hidden = true; });
+        document.getElementById('aria-subscribe').addEventListener('click', function () { ab.hidden = true; });
+
+        // 3a. Good tabs with arrow keys
+        var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+        function selectTab(tab) {
+            tabs.forEach(function (t) {
+                var on = t === tab;
+                t.setAttribute('aria-selected', String(on));
+                t.tabIndex = on ? 0 : -1;
+                document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+            });
+            tab.focus();
+        }
+        tabs.forEach(function (t, i) {
+            t.addEventListener('click', function () { selectTab(t); });
+            t.addEventListener('keydown', function (e) {
+                var n = null;
+                if (e.key === 'ArrowRight') n = tabs[(i + 1) % tabs.length];
+                if (e.key === 'ArrowLeft') n = tabs[(i - 1 + tabs.length) % tabs.length];
+                if (e.key === 'Home') n = tabs[0];
+                if (e.key === 'End') n = tabs[tabs.length - 1];
+                if (n) { e.preventDefault(); selectTab(n); }
+            });
+        });
+
+        // 3b. Broken div tabs
+        document.querySelectorAll('.bad-tabs .t').forEach(function (t) {
+            t.addEventListener('click', function () {
+                document.querySelectorAll('.bad-tabs .t, .bad-tabs .p').forEach(function (x) { x.classList.remove('active'); });
+                t.classList.add('active');
+                document.getElementById(t.getAttribute('data-panel')).classList.add('active');
+            });
+        });
+
+        // 4a. Good disclosure menu
+        var acctBtn = document.getElementById('acct-btn');
+        var acctMenu = document.getElementById('acct-menu');
+        acctBtn.addEventListener('click', function () {
+            var open = acctBtn.getAttribute('aria-expanded') === 'true';
+            acctBtn.setAttribute('aria-expanded', String(!open));
+            acctMenu.hidden = open;
+        });
+        acctMenu.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { acctBtn.setAttribute('aria-expanded', 'false'); acctMenu.hidden = true; acctBtn.focus(); }
+        });
+
+        // 4b. Broken off-canvas menu (transform only)
+        var oc = document.getElementById('offcanvas');
+        document.getElementById('offcanvas-toggle').addEventListener('click', function (e) { e.preventDefault(); oc.classList.toggle('open'); });
+        document.getElementById('offcanvas-close').addEventListener('click', function (e) { e.preventDefault(); oc.classList.remove('open'); });
+
+        // 5. Status messages
+        var goodCount = 0, badCount = 0;
+        document.getElementById('add-good').addEventListener('click', function () {
+            goodCount++;
+            document.getElementById('msg-good').textContent = 'Added to cart (' + goodCount + ' item' + (goodCount === 1 ? '' : 's') + ').';
+        });
+        document.getElementById('add-bad').addEventListener('click', function () {
+            badCount++;
+            document.getElementById('msg-bad').textContent = 'Added to cart (' + badCount + ' item' + (badCount === 1 ? '' : 's') + ').';
+        });
+
+        // 6a. Remove with focus management
+        document.getElementById('list-good').addEventListener('click', function (e) {
+            var btn = e.target.closest('button');
+            if (!btn) return;
+            var li = btn.closest('li');
+            var next = li.nextElementSibling || li.previousElementSibling;
+            li.remove();
+            if (next) next.querySelector('button').focus();
+            else document.getElementById('remove-h').setAttribute('tabindex', '-1'), document.getElementById('remove-h').focus();
+        });
+        // 6b. Remove without focus management
+        document.getElementById('list-bad').addEventListener('click', function (e) {
+            var btn = e.target.closest('button');
+            if (btn) btn.closest('li').remove();
+        });
+
+        // 7. Auto-rotating carousel, no pause
+        var slides = document.querySelectorAll('#carousel .slide');
+        var idx = 0;
+        function show(i) {
+            slides[idx].classList.remove('active');
+            idx = (i + slides.length) % slides.length;
+            slides[idx].classList.add('active');
+        }
+        setInterval(function () { show(idx + 1); }, 4000);
+        document.getElementById('car-next').addEventListener('click', function () { show(idx + 1); });
+        document.getElementById('car-prev').addEventListener('click', function () { show(idx - 1); });
+    })();
+    </script>
+</body>
+</html>

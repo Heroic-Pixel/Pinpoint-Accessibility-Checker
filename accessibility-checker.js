@@ -9,7 +9,7 @@
     
             // Main accessibility checker object
         window.uwAccessibilityChecker = {
-            version: '1.7.3', // Current version
+            version: '1.7.4', // Current version
             websiteUrl: 'https://pinpoint.heroicpixel.com/', // Main website URL
             legacyDomainUrl: 'https://althe3rd.github.io/Pinpoint/', // Legacy domain for transition
             issues: [],
@@ -1313,6 +1313,8 @@
         // Ensure an element and its hidden ancestors are temporarily visible
         ensureElementVisible: function(el) {
             const changed = [];
+            // Revealed ancestors are tagged data-uw-a11y-*, which the
+            // interaction watcher ignores (see isWatchOwnNode).
             try {
                 const chain = [];
                 let n = el;
@@ -4171,6 +4173,10 @@
                             <h2 id="uw-a11y-title">Pinpoint Accessibility Checker</h2>
                         </div>
                         <div class="uw-a11y-header-buttons">
+                            <button id="uw-a11y-watch-badge" type="button" class="uw-a11y-watch-badge" data-uw-action="openWatchPanel" hidden>
+                                <span class="uw-a11y-watch-dot" aria-hidden="true"></span>
+                                <span id="uw-a11y-watch-badge-text" aria-live="polite">Observing</span>
+                            </button>
                             <button id="uw-a11y-minimize" title="Minimize">−</button>
                             <button id="uw-a11y-close" title="Close">✕</button>
                         </div>
@@ -4231,6 +4237,17 @@
                                             <input id="uw-a11y-landmark-structure-toggle" type="checkbox">
                                             <span class="uw-a11y-toggle-slider"></span>
                                         </label>
+                                    </div>
+
+                                    <div class="uw-a11y-inspector-tool-row">
+                                        <div class="uw-a11y-inspector-tool-row-main">
+                                            <h4>Interaction observer</h4>
+                                            <p class="uw-a11y-inspector-tool-teaser">Test accordions, menus, tabs and dialogs as you use them.</p>
+                                            <p id="uw-a11y-inspector-hub-status-interactions" class="uw-a11y-inspector-hub-status">Off</p>
+                                        </div>
+                                        <button type="button" id="uw-a11y-inspector-open-interactions" class="uw-a11y-btn uw-a11y-btn-secondary uw-a11y-inspector-tool-open" aria-label="Open interaction observer">
+                                            <svg class="feather feather-chevron-right" fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                                        </button>
                                     </div>
 
                                     <div class="uw-a11y-inspector-tool-row">
@@ -4302,6 +4319,59 @@
                                             <svg class="feather feather-chevron-left" fill="none" height="20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
                                         </button>
                                         <h3 id="uw-a11y-inspector-detail-heading" class="uw-a11y-inspector-detail-heading"></h3>
+                                    </div>
+
+                                    <div id="uw-a11y-inspector-panel-interactions" class="uw-a11y-inspector-detail-panel" hidden>
+                                        <div class="uw-a11y-inspector-section">
+                                            <p class="uw-a11y-watch-lead">A normal scan only sees the page as it first loads. The observer checks accordions, menus, dialogs and other interactive elements <strong>while you use them</strong>.</p>
+                                            <ol class="uw-a11y-watch-steps" id="uw-a11y-watch-steps">
+                                                <li class="uw-a11y-watch-step" data-step="1">
+                                                    <span class="uw-a11y-watch-step-num" aria-hidden="true">1</span>
+                                                    <div class="uw-a11y-watch-step-body">
+                                                        <p class="uw-a11y-watch-step-title">Start the observer <span class="uw-a11y-watch-step-state"></span></p>
+                                                        <p class="uw-a11y-watch-step-text">Pinpoint records what changes on the page from this point on.</p>
+                                                        <div class="uw-a11y-watch-controls">
+                                                            <button type="button" id="uw-a11y-watch-toggle" class="uw-a11y-btn uw-a11y-watch-start">
+                                                                <span class="uw-a11y-watch-dot" aria-hidden="true"></span>
+                                                                <span class="uw-a11y-watch-toggle-label">Start observing</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                                <li class="uw-a11y-watch-step" data-step="2">
+                                                    <span class="uw-a11y-watch-step-num" aria-hidden="true">2</span>
+                                                    <div class="uw-a11y-watch-step-body">
+                                                        <p class="uw-a11y-watch-step-title">Use the interactive elements on the page <span class="uw-a11y-watch-step-state"></span></p>
+                                                        <p class="uw-a11y-watch-step-text">Open and close each one, first with the mouse, then with the keyboard: <kbd>Tab</kbd> to it, press <kbd>Enter</kbd> or <kbd>Space</kbd>, <kbd>Tab</kbd> through what opens, then press <kbd>Escape</kbd>.</p>
+                                                        <div id="uw-a11y-watch-candidates" class="uw-a11y-watch-candidates" hidden></div>
+                                                    </div>
+                                                </li>
+                                                <li class="uw-a11y-watch-step" data-step="3">
+                                                    <span class="uw-a11y-watch-step-num" aria-hidden="true">3</span>
+                                                    <div class="uw-a11y-watch-step-body">
+                                                        <p class="uw-a11y-watch-step-title">Review the results below <span class="uw-a11y-watch-step-state"></span></p>
+                                                        <p class="uw-a11y-watch-step-text">Each thing that opens or changes gets its own card. Stop the observer when you're done.</p>
+                                                    </div>
+                                                </li>
+                                            </ol>
+                                            <p id="uw-a11y-watch-status" class="uw-a11y-watch-status" role="status">The observer is off.</p>
+                                            <details class="uw-a11y-watch-tips">
+                                                <summary>What gets checked</summary>
+                                                <ul>
+                                                    <li><strong>Dialogs and lightboxes:</strong> dialog role and name, focus moves in, Tab stays inside, Escape closes, focus returns to the button that opened it, page behind is hidden.</li>
+                                                    <li><strong>Accordions, menus, disclosures:</strong> the control is a real button, it can be reached with the keyboard, aria-expanded switches between true and false, and closed content leaves the Tab order.</li>
+                                                    <li><strong>Tabs and carousels:</strong> aria-selected, tab panel role, slide changes, and whether auto-rotating content can be paused.</li>
+                                                    <li><strong>Status messages:</strong> text that changes after you act (such as “Added to cart”) is announced.</li>
+                                                    <li>An automated scan runs on each new state, scoped to just that part of the page.</li>
+                                                </ul>
+                                                <p>Use the keyboard where you can. Some checks depend on where focus is, and many browsers don't focus buttons when you click them with a mouse. Results are separate from the page score.</p>
+                                            </details>
+                                        </div>
+                                        <div class="uw-a11y-watch-results-head">
+                                            <h4 class="uw-a11y-watch-results-title">Results</h4>
+                                            <button type="button" id="uw-a11y-watch-clear" class="uw-a11y-watch-link">Clear results</button>
+                                        </div>
+                                        <div id="uw-a11y-watch-list" class="uw-a11y-watch-list"></div>
                                     </div>
 
                                     <div id="uw-a11y-inspector-panel-outline" class="uw-a11y-inspector-detail-panel" hidden>
@@ -5373,6 +5443,29 @@
                     display: flex;
                     gap: 8px;
                 }
+                #uw-a11y-panel .uw-a11y-watch-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 5px;
+                    height: 28px;
+                    padding: 0 9px;
+                    border: 1px solid #fecaca;
+                    border-radius: 16px;
+                    background: #fef2f2;
+                    color: #991b1b;
+                    font: inherit;
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    white-space: nowrap;
+                    flex-shrink: 0;
+                }
+                #uw-a11y-panel .uw-a11y-watch-badge[hidden] { display: none; }
+                #uw-a11y-panel .uw-a11y-watch-badge:hover { background: #fee2e2; }
+                #uw-a11y-panel .uw-a11y-watch-badge:focus-visible {
+                    outline: 2px solid #007cba;
+                    outline-offset: 2px;
+                }
                 #uw-a11y-panel .uw-a11y-title-container {
                     display: flex;
                     align-items: center;
@@ -6312,6 +6405,70 @@
                     background: rgba(25,135,84,0.12);
                     outline: none;
                 }
+                /* "Found 9 interactive elements..." nudge toward the Interaction observer */
+                #uw-a11y-panel .uw-a11y-interact-hint {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: flex-start;
+                    gap: 6px 8px;
+                    background: rgba(109,40,217,0.06);
+                    border: 1px solid rgba(109,40,217,0.25);
+                    color: #5b21b6;
+                    font-size: 12px;
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    margin-bottom: 10px;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-icon {
+                    flex-shrink: 0;
+                    color: #6d28d9;
+                    margin-top: 2px;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-text {
+                    flex: 1 1 0;
+                    min-width: 0;
+                    line-height: 1.4;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-actions {
+                    flex: 0 0 100%;
+                    padding-left: 22px;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-go {
+                    background: #6d28d9;
+                    color: #fff;
+                    border: 1px solid #6d28d9;
+                    border-radius: 6px;
+                    padding: 4px 10px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    white-space: nowrap;
+                    transition: background 0.15s ease;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-go:hover,
+                #uw-a11y-panel .uw-a11y-interact-hint-go:focus-visible {
+                    background: #5b21b6;
+                    outline: 2px solid #5b21b6;
+                    outline-offset: 2px;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-dismiss {
+                    flex-shrink: 0;
+                    background: none;
+                    border: none;
+                    color: #5b21b6;
+                    font-size: 14px;
+                    cursor: pointer;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    line-height: 1;
+                    opacity: 0.7;
+                }
+                #uw-a11y-panel .uw-a11y-interact-hint-dismiss:hover,
+                #uw-a11y-panel .uw-a11y-interact-hint-dismiss:focus-visible {
+                    opacity: 1;
+                    background: rgba(109,40,217,0.12);
+                    outline: 2px solid #5b21b6;
+                }
                 #uw-a11y-panel .uw-a11y-history-rules {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
@@ -6947,6 +7104,10 @@
             margin-bottom: 12px;
         }
 
+        .uw-a11y-inspector-return-banner[hidden] {
+            display: none;
+        }
+
         .uw-a11y-inspector-return-btn {
             display: inline-flex;
             align-items: center;
@@ -7092,6 +7253,398 @@
             font-size: 14px;
             color: #666;
             font-weight: 500;
+        }
+
+        /* ── Interaction observer (internally "watch") ── */
+        .uw-a11y-watch-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .uw-a11y-watch-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #9ca3af;
+            flex-shrink: 0;
+        }
+        #uw-a11y-watch-toggle.active .uw-a11y-watch-dot,
+        .uw-a11y-watch-badge .uw-a11y-watch-dot {
+            background: #dc2626;
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25);
+        }
+        @media (prefers-reduced-motion: no-preference) {
+            #uw-a11y-watch-toggle.active .uw-a11y-watch-dot,
+            .uw-a11y-watch-badge .uw-a11y-watch-dot {
+                animation: uw-a11y-watch-pulse 1.6s ease-in-out infinite;
+            }
+        }
+        @keyframes uw-a11y-watch-pulse {
+            0%, 100% { box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3); }
+            50% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.08); }
+        }
+        .uw-a11y-inspector-section p.uw-a11y-watch-lead {
+            margin: 0 0 12px 0;
+        }
+        .uw-a11y-watch-steps {
+            list-style: none;
+            margin: 0 0 10px 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .uw-a11y-watch-step {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px 12px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .uw-a11y-watch-step[data-state="current"] {
+            border-color: #6d28d9;
+            box-shadow: 0 0 0 1px #6d28d9;
+        }
+        .uw-a11y-watch-step-num {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            background: #e5e7eb;
+            color: #374151;
+        }
+        .uw-a11y-watch-step[data-state="current"] .uw-a11y-watch-step-num {
+            background: #6d28d9;
+            color: #fff;
+        }
+        .uw-a11y-watch-step[data-state="done"] .uw-a11y-watch-step-num {
+            background: #dcfce7;
+            color: #15803d;
+        }
+        .uw-a11y-watch-step-body {
+            flex: 1;
+            min-width: 0;
+        }
+        .uw-a11y-inspector-section p.uw-a11y-watch-step-title {
+            margin: 2px 0 2px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .uw-a11y-watch-step-state {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+        .uw-a11y-inspector-section p.uw-a11y-watch-step-text {
+            margin: 0;
+            font-size: 13px;
+            color: #4b5563;
+        }
+        .uw-a11y-watch-step[data-state="todo"] .uw-a11y-watch-step-title,
+        .uw-a11y-watch-step[data-state="todo"] .uw-a11y-watch-step-text {
+            color: #6b7280;
+        }
+        .uw-a11y-watch-step kbd {
+            font-family: inherit;
+            font-size: 12px;
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-bottom-width: 2px;
+            border-radius: 4px;
+            padding: 0 4px;
+        }
+        .uw-a11y-watch-step .uw-a11y-watch-controls {
+            margin: 8px 0 0 0;
+        }
+        .uw-a11y-btn.uw-a11y-watch-start {
+            background: #6d28d9;
+            border: 1px solid #6d28d9;
+            color: #fff;
+            font-weight: 600;
+        }
+        .uw-a11y-btn.uw-a11y-watch-start:hover:not(:disabled) {
+            background: #5b21b6;
+            border-color: #5b21b6;
+        }
+        .uw-a11y-btn.uw-a11y-watch-start:focus-visible {
+            outline: 2px solid #5b21b6;
+            outline-offset: 2px;
+        }
+        .uw-a11y-btn.uw-a11y-watch-start .uw-a11y-watch-dot {
+            background: #fff;
+        }
+        .uw-a11y-btn.uw-a11y-watch-start.active {
+            background: #fff;
+            color: #b91c1c;
+            border-color: #fca5a5;
+        }
+        .uw-a11y-btn.uw-a11y-watch-start.active:hover:not(:disabled) {
+            background: #fef2f2;
+            border-color: #f87171;
+        }
+        .uw-a11y-watch-step .uw-a11y-watch-candidates {
+            margin: 10px 0 0 0;
+        }
+        .uw-a11y-watch-results-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin: 4px 0 8px 0;
+        }
+        .uw-a11y-watch-results-head h4.uw-a11y-watch-results-title {
+            margin: 0;
+            font-size: 15px;
+            color: #1f2937;
+        }
+        .uw-a11y-inspector-section p.uw-a11y-watch-status {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+            color: #374151;
+        }
+        .uw-a11y-watch-tips {
+            font-size: 13px;
+            color: #4b5563;
+        }
+        .uw-a11y-watch-tips summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #374151;
+        }
+        .uw-a11y-watch-tips summary:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        .uw-a11y-watch-tips ul {
+            margin: 8px 0;
+            padding-left: 18px;
+        }
+        .uw-a11y-watch-tips li {
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+        .uw-a11y-inspector-section .uw-a11y-watch-tips p {
+            font-size: 13px;
+            margin: 0;
+        }
+        .uw-a11y-watch-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .uw-a11y-watch-empty,
+        .uw-a11y-watch-summary {
+            margin: 0;
+            font-size: 13px;
+            color: #4b5563;
+        }
+        .uw-a11y-watch-summary {
+            font-weight: 600;
+        }
+        .uw-a11y-watch-candidates {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            background: #faf8ff;
+        }
+        .uw-a11y-watch-candidates[hidden] { display: none; }
+        .uw-a11y-watch-candidates-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .uw-a11y-watch-candidates h5 {
+            margin: 0;
+            font-size: 13px;
+            color: #1f2937;
+        }
+        .uw-a11y-watch-candidates p.uw-a11y-watch-candidates-intro {
+            margin: 4px 0 8px;
+            font-size: 12px;
+            color: #4b5563;
+            line-height: 1.4;
+        }
+        .uw-a11y-watch-candidates ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .uw-a11y-watch-candidates li {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 13px;
+            border-top: 1px solid #ede9fe;
+        }
+        .uw-a11y-watch-candidates li:first-child { border-top: 0; }
+        .uw-a11y-watch-cand-icon {
+            width: 14px;
+            text-align: center;
+            color: #6b7280;
+            flex-shrink: 0;
+        }
+        .uw-a11y-watch-candidates li.is-done .uw-a11y-watch-cand-icon { color: #15803d; font-weight: 700; }
+        .uw-a11y-watch-cand-name { flex: 1; color: #1f2937; }
+        .uw-a11y-watch-cand-count { color: #4b5563; font-size: 12px; white-space: nowrap; }
+        .uw-a11y-watch-state {
+            border: 1px solid #e5e7eb;
+            border-left: 4px solid #16a34a;
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #fff;
+        }
+        .uw-a11y-watch-state[data-worst="fail"] { border-left-color: #dc2626; }
+        .uw-a11y-watch-state[data-worst="warn"] { border-left-color: #d97706; }
+        .uw-a11y-watch-state[data-worst="todo"] { border-left-color: #6366f1; }
+        .uw-a11y-watch-state-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 6px 8px;
+        }
+        .uw-a11y-watch-kind {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #3730a3;
+            background: #eef2ff;
+            border-radius: 4px;
+            padding: 2px 6px;
+        }
+        .uw-a11y-watch-title {
+            margin: 0;
+            flex: 1;
+            min-width: 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #111827;
+            overflow-wrap: anywhere;
+        }
+        .uw-a11y-watch-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .uw-a11y-watch-trigger {
+            margin: 4px 0 0;
+            font-size: 12px;
+            color: #4b5563;
+            overflow-wrap: anywhere;
+        }
+        .uw-a11y-watch-checks,
+        .uw-a11y-watch-axe-list {
+            list-style: none;
+            margin: 8px 0 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .uw-a11y-watch-checks li {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            font-size: 13px;
+            line-height: 1.4;
+            color: #1f2937;
+        }
+        .uw-a11y-watch-icon {
+            flex-shrink: 0;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            margin-top: 1px;
+        }
+        .uw-a11y-watch-checks li.is-pass .uw-a11y-watch-icon { background: #dcfce7; color: #166534; }
+        .uw-a11y-watch-checks li.is-fail .uw-a11y-watch-icon { background: #fee2e2; color: #991b1b; }
+        .uw-a11y-watch-checks li.is-warn .uw-a11y-watch-icon { background: #fef3c7; color: #92400e; }
+        .uw-a11y-watch-checks li.is-todo .uw-a11y-watch-icon { background: #e0e7ff; color: #3730a3; }
+        .uw-a11y-watch-checks li.is-info .uw-a11y-watch-icon { background: #f3f4f6; color: #374151; }
+        .uw-a11y-watch-check-text {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+        .uw-a11y-watch-sc {
+            display: inline-block;
+            font-size: 11px;
+            color: #4b5563;
+            background: #f3f4f6;
+            border-radius: 4px;
+            padding: 0 5px;
+            white-space: nowrap;
+        }
+        .uw-a11y-watch-axe {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #e5e7eb;
+        }
+        .uw-a11y-watch-axe-note {
+            margin: 0;
+            font-size: 12px;
+            color: #4b5563;
+        }
+        .uw-a11y-watch-axe-list li {
+            font-size: 13px;
+            line-height: 1.4;
+            color: #1f2937;
+            overflow-wrap: anywhere;
+        }
+        .uw-a11y-watch-impact {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: capitalize;
+            border-radius: 4px;
+            padding: 0 5px;
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .uw-a11y-watch-impact[data-impact="critical"],
+        .uw-a11y-watch-impact[data-impact="serious"] { background: #fee2e2; color: #991b1b; }
+        .uw-a11y-watch-impact[data-impact="moderate"] { background: #fef3c7; color: #92400e; }
+        .uw-a11y-watch-link {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            font-size: 12px;
+            color: #4338ca;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .uw-a11y-watch-link:focus-visible {
+            outline: 2px solid #4f46e5;
+            outline-offset: 2px;
+        }
+        .uw-a11y-watch-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 10px;
+        }
+        .uw-a11y-watch-actions .uw-a11y-btn {
+            padding: 4px 10px;
+            font-size: 12px;
         }
 
         /* Outline View styles */
@@ -9907,7 +10460,7 @@
             const detail = root.getElementById('uw-a11y-inspector-detail');
             if (hub) hub.removeAttribute('hidden');
             if (detail) detail.setAttribute('hidden', '');
-            ['outline', 'links', 'cvd', 'alt', 'contrast'].forEach((id) => {
+            ['outline', 'links', 'cvd', 'alt', 'contrast', 'interactions'].forEach((id) => {
                 const p = root.getElementById('uw-a11y-inspector-panel-' + id);
                 if (p) p.setAttribute('hidden', '');
             });
@@ -9953,7 +10506,7 @@
 
         openInspectorTool: function(name) {
             try {
-                const valid = { outline: 1, links: 1, cvd: 1, alt: 1, contrast: 1 };
+                const valid = { outline: 1, links: 1, cvd: 1, alt: 1, contrast: 1, interactions: 1 };
                 if (!valid[name]) return;
                 const origin = this.currentView;
                 this.showView('inspector');
@@ -10012,7 +10565,8 @@
                 links: 'Links',
                 cvd: 'Color blindness simulation',
                 alt: 'Alternative text',
-                contrast: 'Contrast checker'
+                contrast: 'Contrast checker',
+                interactions: 'Interaction observer'
             };
             if (!titles[panelId]) return;
             const root = this.shadowRoot;
@@ -10025,7 +10579,7 @@
             if (hub) hub.setAttribute('hidden', '');
             if (detail) detail.removeAttribute('hidden');
 
-            ['outline', 'links', 'cvd', 'alt', 'contrast'].forEach((id) => {
+            ['outline', 'links', 'cvd', 'alt', 'contrast', 'interactions'].forEach((id) => {
                 const p = root.getElementById('uw-a11y-inspector-panel-' + id);
                 if (p) {
                     if (id === panelId) p.removeAttribute('hidden');
@@ -10142,6 +10696,20 @@
                 }
                 if (this.isAltTextOverlayActive) parts.push('Overlays on');
                 sa.textContent = parts.length ? parts.join(' · ') : 'Off';
+            }
+
+            const sw = root.getElementById('uw-a11y-inspector-hub-status-interactions');
+            if (sw) {
+                const n = (this.watchStates || []).length;
+                const c = n && typeof this.getWatchCounts === 'function' ? this.getWatchCounts() : null;
+                const issues = c ? c.fail + c.warn : 0;
+                let txt = this.isWatchActive ? 'Observing' : 'Off';
+                if (n) txt += ' · ' + n + (n === 1 ? ' state' : ' states') + ', ' + issues + (issues === 1 ? ' issue' : ' issues');
+                else if (!this.isWatchActive && this.watchCandidates && this.watchCandidates.length) {
+                    const found = this.watchCandidates.reduce((t, g) => t + g.items.length + g.unlocated, 0);
+                    txt += ' · ' + found + (found === 1 ? ' element' : ' elements') + ' to test';
+                }
+                if (sw.textContent !== txt) sw.textContent = txt;
             }
 
             const scc = root.getElementById('uw-a11y-inspector-hub-status-contrast');
@@ -10271,7 +10839,1634 @@
                 }, true);
             }
 
+            this.initWatchMode();
             this.syncInspectorHubStatus();
+        },
+
+        // ── Interaction watch ────────────────────────────────────────────
+        // Watches the page while the user operates its widgets (accordions,
+        // menus, tabs, dialogs, lightboxes…). Whenever content appears or
+        // disappears, Pinpoint scans just that region with axe and checks the
+        // behaviour axe can't see on a static page: focus moving into a dialog,
+        // focus staying inside it, Escape closing it, focus returning to the
+        // control that opened it, aria-expanded flipping, hidden content
+        // leaving the Tab order, and updates being announced.
+        //
+        // How "appeared" is detected: we keep a snapshot of the top-most
+        // hidden elements on the page (a TreeWalker that stops descending at
+        // the first hidden element). It's refreshed right before every user
+        // activation (pointerdown / Enter / Space / Escape / arrow keys) and
+        // after every settle. When page mutations stop for a moment we
+        // compare: anything in the snapshot that is now shown — plus any newly
+        // added element that is shown — is a new state. This catches class
+        // toggles on wrappers or <body>, which looking at mutation targets
+        // alone would miss.
+        //
+        // Pinpoint never synthesises input: synthetic events are untrusted and
+        // many widgets ignore them, so the user drives and we observe.
+
+        initWatchMode: function() {
+            if (this._watchInitialized) return;
+            this._watchInitialized = true;
+            this.watchStates = this.watchStates || [];
+            const root = this.shadowRoot;
+            if (!root) return;
+
+            const toggle = root.getElementById('uw-a11y-watch-toggle');
+            if (toggle) toggle.addEventListener('click', (e) => { e.preventDefault(); this.toggleWatchMode(); });
+
+            const clear = root.getElementById('uw-a11y-watch-clear');
+            if (clear) clear.addEventListener('click', (e) => { e.preventDefault(); this.clearWatchResults(); });
+
+            const open = root.getElementById('uw-a11y-inspector-open-interactions');
+            if (open) open.addEventListener('click', (e) => { e.preventDefault(); this.openInspectorDetail('interactions'); });
+
+            const list = root.getElementById('uw-a11y-watch-list');
+            if (list) {
+                list.addEventListener('click', (e) => {
+                    const btn = e.target && e.target.closest && e.target.closest('[data-watch-action]');
+                    if (!btn) return;
+                    e.preventDefault();
+                    this.handleWatchAction(
+                        btn.getAttribute('data-watch-action'),
+                        btn.getAttribute('data-watch-id'),
+                        btn.getAttribute('data-watch-target')
+                    );
+                });
+            }
+
+            const cands = root.getElementById('uw-a11y-watch-candidates');
+            if (cands) {
+                cands.addEventListener('click', (e) => {
+                    const btn = e.target && e.target.closest && e.target.closest('[data-cand-action]');
+                    if (!btn) return;
+                    e.preventDefault();
+                    this.handleWatchCandidateAction(btn.getAttribute('data-cand-action'), btn.getAttribute('data-cand-key'));
+                });
+            }
+
+            this.renderWatchResults();
+        },
+
+        // Header badge entry point (data-uw-action="openWatchPanel").
+        openWatchPanel: function() {
+            try {
+                if (this.currentView !== 'inspector') this.showView('inspector');
+                this.openInspectorDetail('interactions');
+            } catch (e) {
+                console.warn('[Pinpoint] openWatchPanel failed:', e && e.message);
+            }
+        },
+
+        toggleWatchMode: function() {
+            if (this.isWatchActive) this.stopWatchMode();
+            else this.startWatchMode();
+        },
+
+        startWatchMode: function() {
+            if (this.isWatchActive) return;
+            if (!window.axe) {
+                this.setWatchStatus('The scanner is still loading. Wait for the first scan to finish, then start the observer.');
+                return;
+            }
+            this.isWatchActive = true;
+            this.watchStates = this.watchStates || [];
+            this._watchSeq = this._watchSeq || 0;
+            this._watchPendingAdded = new Set();
+            this._watchPendingText = new Set();
+            this._watchOpen = [];
+            this._watchAutoGroups = new Map();
+            this._watchActivation = null;
+            this._watchAxeQueue = Promise.resolve();
+            if (!this.watchCandidates) this.refreshWatchCandidates();
+            this._watchHidden = this.watchSnapshotHidden();
+            this._watchSnapAt = Date.now();
+
+            this._watchObserver = new MutationObserver((muts) => this.onWatchMutations(muts));
+            this._watchObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeOldValue: true,
+                attributeFilter: ['class', 'style', 'hidden', 'open', 'aria-hidden', 'aria-expanded', 'aria-selected', 'aria-modal', 'inert', 'role']
+            });
+
+            this._watchHandlers = {
+                pointerdown: (e) => this.onWatchPointerDown(e),
+                click: (e) => this.onWatchClick(e),
+                keydown: (e) => this.onWatchKeyDown(e),
+                focusin: (e) => this.onWatchFocusIn(e),
+                transitionend: () => this.scheduleWatchRecheck(120),
+                animationend: () => this.scheduleWatchRecheck(120)
+            };
+            Object.keys(this._watchHandlers).forEach((type) => {
+                document.addEventListener(type, this._watchHandlers[type], true);
+            });
+
+            this.setWatchStatus('Observing. Now use the interactive elements on the page (step 2).');
+            this.renderWatchResults();
+        },
+
+        stopWatchMode: function() {
+            if (!this.isWatchActive) return;
+            this.isWatchActive = false;
+            if (this._watchObserver) {
+                this._watchObserver.disconnect();
+                this._watchObserver = null;
+            }
+            if (this._watchHandlers) {
+                Object.keys(this._watchHandlers).forEach((type) => {
+                    document.removeEventListener(type, this._watchHandlers[type], true);
+                });
+                this._watchHandlers = null;
+            }
+            clearTimeout(this._watchSettleTimer);
+            clearTimeout(this._watchRecheckTimer);
+            clearTimeout(this._watchRenderTimer);
+            this._watchSettleTimer = null;
+            this._watchRecheckTimer = null;
+            this._watchRenderTimer = null;
+            this._watchPendingSince = 0;
+            // Anything still open can no longer be tracked to its close.
+            (this._watchOpen || []).forEach((s) => {
+                s.status = 'stopped';
+                this.setWatchCheck(s, 'focus-return', 'info', 'Not checked — the observer was stopped while this was still open.');
+            });
+            this._watchOpen = [];
+            this._watchHidden = new Set();
+            this.setWatchStatus('Observer stopped. Your results are kept below until you clear them.');
+            this.syncWatchUi();
+            this.renderWatchResults();
+        },
+
+        clearWatchResults: function() {
+            this.watchStates = [];
+            this._watchOpen = [];
+            this._watchAutoGroups = new Map();
+            this.setWatchStatus(this.isWatchActive ? 'Results cleared. Still observing.' : 'Results cleared.');
+            this.renderWatchResults();
+        },
+
+        setWatchStatus: function(text) {
+            const el = this.shadowRoot && this.shadowRoot.getElementById('uw-a11y-watch-status');
+            if (el) el.textContent = text;
+        },
+
+        // Toggle button label, header badge, hub status.
+        syncWatchUi: function() {
+            const root = this.shadowRoot;
+            if (!root) return;
+            const toggle = root.getElementById('uw-a11y-watch-toggle');
+            if (toggle) {
+                const label = toggle.querySelector('.uw-a11y-watch-toggle-label');
+                if (label) label.textContent = this.isWatchActive ? 'Stop observing' : 'Start observing';
+                toggle.classList.toggle('active', !!this.isWatchActive);
+            }
+            const counts = this.getWatchCounts();
+            const badge = root.getElementById('uw-a11y-watch-badge');
+            if (badge) {
+                if (this.isWatchActive) badge.removeAttribute('hidden');
+                else badge.setAttribute('hidden', '');
+                const text = root.getElementById('uw-a11y-watch-badge-text');
+                const issues = counts.fail + counts.warn;
+                const next = 'Observing' + (issues ? ' · ' + issues + (issues === 1 ? ' issue' : ' issues') : '');
+                // Only touch the text when it changes so the live region
+                // doesn't repeat itself on every re-render.
+                if (text && text.textContent !== next) text.textContent = next;
+            }
+            this.syncWatchSteps(counts);
+            if (typeof this.syncInspectorHubStatus === 'function') this.syncInspectorHubStatus();
+        },
+
+        // Highlights where the user is in the 1-2-3 steps: start, use the
+        // page, review. Done steps get a check mark.
+        syncWatchSteps: function(counts) {
+            const box = this.shadowRoot && this.shadowRoot.getElementById('uw-a11y-watch-steps');
+            if (!box) return;
+            const has = !!(counts && counts.states);
+            const current = this.isWatchActive ? (has ? 3 : 2) : (has ? 3 : 1);
+            box.querySelectorAll('.uw-a11y-watch-step').forEach((li) => {
+                const n = Number(li.getAttribute('data-step'));
+                const done = (n === 1 && this.isWatchActive) || (n === 2 && has);
+                const state = done ? 'done' : (n === current ? 'current' : 'todo');
+                li.setAttribute('data-state', state);
+                const num = li.querySelector('.uw-a11y-watch-step-num');
+                if (num) num.textContent = done ? '✓' : String(n);
+                const sr = li.querySelector('.uw-a11y-watch-step-state');
+                if (sr) sr.textContent = done ? '(done)' : (n === current ? '(you are here)' : '');
+            });
+            if (this.isWatchActive && has) {
+                const step2 = box.querySelector('[data-step="2"]');
+                if (step2) step2.setAttribute('data-state', 'done');
+            }
+        },
+
+        getWatchCounts: function() {
+            const out = { states: 0, fail: 0, warn: 0 };
+            (this.watchStates || []).forEach((s) => {
+                out.states++;
+                s.checks.forEach((c) => {
+                    if (c.status === 'fail') out.fail++;
+                    else if (c.status === 'warn') out.warn++;
+                });
+                if (s.axe && s.axe.violations) out.fail += s.axe.violations.length;
+            });
+            return out;
+        },
+
+        // ── Visibility helpers ──
+
+        // "Shown" = rendered, not transparent, not collapsed to nothing
+        // behind overflow clipping, and not parked off-screen (off-canvas
+        // menus, -9999px tricks).
+        watchIsShown: function(el) {
+            if (!el || el.nodeType !== 1 || !el.isConnected) return false;
+            if (typeof el.checkVisibility === 'function') {
+                if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true, checkOpacity: true, checkVisibilityCSS: true })) return false;
+            } else {
+                if (!el.getClientRects().length) return false;
+                const cs0 = getComputedStyle(el);
+                if (cs0.visibility === 'hidden' || cs0.visibility === 'collapse') return false;
+                let n = el;
+                while (n && n.nodeType === 1 && n !== document.documentElement) {
+                    if (getComputedStyle(n).opacity === '0') return false;
+                    n = n.parentElement;
+                }
+            }
+            const r = el.getBoundingClientRect();
+            if (r.width <= 1 || r.height <= 1) {
+                const cs = getComputedStyle(el);
+                const clipsOverflow = /hidden|clip|auto|scroll/.test(cs.overflowX + ' ' + cs.overflowY);
+                const clipped = cs.clip && cs.clip !== 'auto';
+                if (clipsOverflow || clipped) return false;
+            }
+            const vw = window.innerWidth || document.documentElement.clientWidth;
+            const vh = window.innerHeight || document.documentElement.clientHeight;
+            const offX = r.right <= 0 || r.left >= vw;
+            const offY = r.bottom <= 0 || r.top >= vh;
+            if (offX || offY) {
+                const pos = getComputedStyle(el).position;
+                if (pos === 'fixed' && (offX || offY)) return false;
+                if (pos === 'absolute' && offX) return false;
+            }
+            return true;
+        },
+
+        // Top-most hidden elements: walk the body, record an element as soon
+        // as it's hidden and don't descend into it.
+        watchSnapshotHidden: function() {
+            const hidden = new Set();
+            if (!document.body) return hidden;
+            const container = document.getElementById('uw-a11y-container');
+            const skipTags = { SCRIPT: 1, STYLE: 1, LINK: 1, META: 1, TEMPLATE: 1, NOSCRIPT: 1, BR: 1, svg: 1, SVG: 1, PATH: 1 };
+            let visited = 0;
+            const LIMIT = 25000;
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+                acceptNode: (el) => {
+                    if (el === container) return NodeFilter.FILTER_REJECT;
+                    if (skipTags[el.tagName]) return NodeFilter.FILTER_REJECT;
+                    if (el.hasAttribute('data-uw-a11y-overlay')) return NodeFilter.FILTER_REJECT;
+                    if (!this.watchIsShown(el)) {
+                        hidden.add(el);
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+            while (walker.nextNode()) {
+                if (++visited > LIMIT) { this._watchSnapshotTruncated = true; break; }
+            }
+            return hidden;
+        },
+
+        // Elements Pinpoint itself owns or is temporarily manipulating.
+        isWatchOwnNode: function(el) {
+            if (!el || el.nodeType !== 1 || !el.closest) return false;
+            return !!el.closest('#uw-a11y-container, [data-uw-a11y-overlay], [id^="uw-a11y-"], [data-uw-a11y-reveal], [data-uw-a11y-removed-hidden], [data-uw-a11y-details-opened], [data-uw-a11y-aria-hidden-prev]');
+        },
+
+        isWatchEventFromPanel: function(e) {
+            const container = document.getElementById('uw-a11y-container');
+            if (!container) return false;
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            return path.indexOf(container) !== -1 || (e.target && container.contains(e.target));
+        },
+
+        watchStripOwnClasses: function(cls) {
+            return (cls || '').split(/\s+/).filter((c) => c && c.indexOf('uw-a11y-') !== 0).sort().join(' ');
+        },
+
+        isWatchMeaningful: function(el) {
+            if (!el || el.nodeType !== 1) return false;
+            const skip = { SCRIPT: 1, STYLE: 1, LINK: 1, META: 1, TEMPLATE: 1, NOSCRIPT: 1, BR: 1, HR: 1 };
+            if (skip[el.tagName]) return false;
+            const r = el.getBoundingClientRect();
+            if (r.width * r.height < 100) return false;
+            if ((el.innerText || '').trim()) return true;
+            if (el.matches('img, video, iframe, canvas, svg')) return true;
+            return !!el.querySelector('img, svg, video, iframe, canvas, input, button, select, textarea, a[href]');
+        },
+
+        isWatchInLiveRegion: function(el) {
+            if (!el || !el.closest) return false;
+            return !!el.closest('[aria-live]:not([aria-live="off"]), [role="status"], [role="alert"], [role="log"], [role="marquee"], [role="timer"], output');
+        },
+
+        // Short human description: “Label” (role)
+        describeWatchElement: function(el) {
+            if (!el || el.nodeType !== 1) return 'unknown element';
+            if (el === document.body || el === document.documentElement) return 'the page (nothing focused)';
+            let name = '';
+            try { name = this.computeLinkAccessibleName(el) || ''; } catch (_) { name = ''; }
+            name = name.replace(/\s+/g, ' ').trim();
+            if (name.length > 60) name = name.slice(0, 57) + '…';
+            const role = el.getAttribute('role') || el.tagName.toLowerCase();
+            if (name) return '“' + name + '” (' + role + ')';
+            let desc = '<' + el.tagName.toLowerCase();
+            if (el.id) desc += ' id="' + el.id + '"';
+            else if (typeof el.className === 'string' && el.className.trim()) desc += ' class="' + el.className.trim().split(/\s+/).slice(0, 2).join(' ') + '"';
+            return desc + '>';
+        },
+
+        // Accessible name for a dialog: only aria-labelledby / aria-label /
+        // title count (dialogs don't take their name from content).
+        getWatchDialogName: function(el) {
+            if (!el) return '';
+            const ids = (el.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+            const fromIds = ids.map((id) => {
+                const ref = document.getElementById(id);
+                return ref ? (ref.textContent || '').trim() : '';
+            }).filter(Boolean).join(' ');
+            if (fromIds) return fromIds;
+            return (el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();
+        },
+
+        getWatchRegionTitle: function(region, dialogEl, trigger) {
+            let name = dialogEl ? this.getWatchDialogName(dialogEl) : '';
+            if (!name) name = this.getWatchDialogName(region);
+            if (!name && trigger) {
+                try { name = (this.computeLinkAccessibleName(trigger) || '').trim(); } catch (_) { name = ''; }
+            }
+            if (!name) {
+                const h = region.matches('h1,h2,h3,h4,h5,h6') ? region : region.querySelector('h1, h2, h3, h4, h5, h6, [role="heading"], legend, caption');
+                if (h) name = (h.textContent || '').trim();
+            }
+            if (!name) {
+                // First line of real text (skips glyph-only lines like “×”).
+                const lines = (region.innerText || '').split('\n').map((l) => l.trim());
+                name = lines.find((l) => l.replace(/[^\p{L}\p{N}]/gu, '').length >= 2) || lines.find(Boolean) || '';
+            }
+            name = name.replace(/\s+/g, ' ');
+            if (name.length > 70) name = name.slice(0, 67) + '…';
+            return name || this.describeWatchElement(region);
+        },
+
+        resolveWatchTrigger: function(el) {
+            if (!el || el.nodeType !== 1) return null;
+            if (el === document.body || el === document.documentElement) return null;
+            const sel = 'button, a[href], a[role], input, select, textarea, summary, label, [role="button"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="link"], [role="switch"], [role="checkbox"], [role="option"], [role="treeitem"], [aria-expanded], [aria-controls], [aria-haspopup], [tabindex], [onclick]';
+            const hit = el.closest(sel);
+            if (hit && hit !== document.body) return hit;
+            return el;
+        },
+
+        // ── Event handlers ──
+
+        recordWatchActivation: function(e, method) {
+            // Process anything still pending first so the fresh baseline
+            // below doesn't swallow it.
+            if (this._watchSettleTimer) {
+                clearTimeout(this._watchSettleTimer);
+                this._watchSettleTimer = null;
+                this.runWatchSettle();
+            }
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            let raw = path[0] && path[0].nodeType === 1 ? path[0] : e.target;
+            if (method === 'keyboard' && document.activeElement && document.activeElement !== document.body) {
+                raw = (path[0] && path[0].nodeType === 1) ? path[0] : document.activeElement;
+            }
+            const trigger = this.resolveWatchTrigger(raw);
+            this._watchActivation = {
+                at: Date.now(),
+                method: method,
+                key: e.key || null,
+                trigger: trigger,
+                triggerLabel: trigger ? this.describeWatchElement(trigger) : '',
+                expandedBefore: trigger ? trigger.getAttribute('aria-expanded') : null,
+                selectedBefore: trigger ? trigger.getAttribute('aria-selected') : null,
+                triggerHadFocus: method === 'keyboard' ? true : null,
+                stateId: null,
+                focusLostChecked: false
+            };
+            if (trigger) this.markWatchCandidateTried(trigger);
+            this._watchHidden = this.watchSnapshotHidden();
+            this._watchSnapAt = Date.now();
+        },
+
+        onWatchPointerDown: function(e) {
+            if (!this.isWatchActive || this.isWatchEventFromPanel(e)) return;
+            if (e.button !== undefined && e.button !== 0) return;
+            this.recordWatchActivation(e, 'pointer');
+        },
+
+        onWatchClick: function(e) {
+            if (!this.isWatchActive || this.isWatchEventFromPanel(e)) return;
+            const act = this._watchActivation;
+            const recent = act && (Date.now() - act.at < 1000);
+            if (recent && act.method === 'pointer') {
+                // Safari doesn't focus buttons on click; record whether focus
+                // actually landed on the trigger so focus checks stay fair.
+                const a = document.activeElement;
+                act.triggerHadFocus = !!(act.trigger && a && (a === act.trigger || act.trigger.contains(a)));
+                return;
+            }
+            if (!recent) {
+                // Click with no preceding pointerdown/key: usually a screen
+                // reader activation (detail === 0).
+                this.recordWatchActivation(e, e.detail === 0 ? 'assistive' : 'pointer');
+            }
+        },
+
+        onWatchKeyDown: function(e) {
+            if (!this.isWatchActive || this.isWatchEventFromPanel(e)) return;
+            const key = e.key;
+            const now = Date.now();
+            if (key === 'Tab') {
+                this._watchLastTabAt = now;
+                const a = document.activeElement;
+                (this._watchOpen || []).forEach((s) => {
+                    if (s.kind === 'dialog' && s.region && a && s.region.contains(a)) s.tabCount++;
+                });
+                return;
+            }
+            if (key === 'Escape' || key === 'Esc') {
+                const openDialogs = (this._watchOpen || []).filter((s) => s.kind === 'dialog');
+                this.recordWatchActivation(e, 'keyboard');
+                openDialogs.forEach((s) => {
+                    s.escPressedAt = now;
+                    setTimeout(() => this.evaluateWatchEscape(s), 900);
+                });
+                return;
+            }
+            const t = e.target;
+            const isTextEntry = t && t.nodeType === 1 && (t.isContentEditable || (t.matches && t.matches('textarea, input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]):not([type="image"])')));
+            if (key === 'Enter' || ((key === ' ' || key === 'Spacebar') && !isTextEntry)) {
+                this.recordWatchActivation(e, 'keyboard');
+                return;
+            }
+            if (/^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(key) && t && t.closest) {
+                if (t.closest('[role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="treeitem"], [role="radio"]')) {
+                    this.recordWatchActivation(e, 'keyboard');
+                }
+            }
+        },
+
+        onWatchFocusIn: function(e) {
+            if (!this.isWatchActive || this.isWatchEventFromPanel(e)) return;
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            const target = path[0] && path[0].nodeType === 1 ? path[0] : e.target;
+            const viaTab = Date.now() - (this._watchLastTabAt || 0) < 400;
+            if (!viaTab) return;
+            (this._watchOpen || []).forEach((s) => {
+                if (s.kind !== 'dialog' || !s.modal || s.focusEscaped) return;
+                if (!s.region || s.region.contains(target)) return;
+                // Give a closing dialog a moment — focus moving back to the
+                // trigger as it closes isn't an escape.
+                setTimeout(() => {
+                    if (s.status !== 'open' || s.focusEscaped) return;
+                    if (!s.region.isConnected || !this.watchIsShown(s.region)) return;
+                    s.focusEscaped = true;
+                    this.setWatchCheck(s, 'focus-trap', 'fail',
+                        'Pressing Tab moved focus out of the open dialog, to ' + this.describeWatchElement(target) + '. Keyboard users end up behind the overlay.',
+                        '2.4.3 Focus Order');
+                    this.queueWatchRender();
+                }, 250);
+            });
+        },
+
+        onWatchMutations: function(muts) {
+            if (!this.isWatchActive) return;
+            let relevant = false;
+            for (let i = 0; i < muts.length; i++) {
+                const m = muts[i];
+                const target = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+                if (!target || this.isWatchOwnNode(target)) continue;
+                if (m.type === 'attributes') {
+                    if (m.attributeName === 'class' &&
+                        this.watchStripOwnClasses(m.oldValue) === this.watchStripOwnClasses(target.getAttribute('class'))) continue;
+                    if (m.attributeName === 'style' && this._watchFlashEl === target && Date.now() < (this._watchFlashUntil || 0)) continue;
+                    relevant = true;
+                } else if (m.type === 'childList') {
+                    m.addedNodes.forEach((n) => {
+                        if (n.nodeType === 1) {
+                            if (!this.isWatchOwnNode(n) && n.id !== 'uw-a11y-container') {
+                                this._watchPendingAdded.add(n);
+                                relevant = true;
+                            }
+                        } else if (n.nodeType === 3 && (n.textContent || '').trim()) {
+                            this._watchPendingText.add(target);
+                            relevant = true;
+                        }
+                    });
+                    m.removedNodes.forEach((n) => {
+                        if (n.nodeType === 3 && (n.textContent || '').trim()) this._watchPendingText.add(target);
+                        relevant = true;
+                    });
+                } else if (m.type === 'characterData') {
+                    this._watchPendingText.add(target);
+                    relevant = true;
+                }
+            }
+            if (relevant) this.scheduleWatchSettle();
+        },
+
+        // Wait for the page to stop changing (450 ms quiet), but never longer
+        // than 1.5 s from the first change, so constantly-animating pages
+        // still get processed.
+        scheduleWatchSettle: function() {
+            const now = Date.now();
+            if (!this._watchPendingSince) this._watchPendingSince = now;
+            clearTimeout(this._watchSettleTimer);
+            const wait = Math.max(0, Math.min(450, (this._watchPendingSince + 1500) - now));
+            this._watchSettleTimer = setTimeout(() => {
+                this._watchSettleTimer = null;
+                this.runWatchSettle();
+            }, wait);
+        },
+
+        // Transitions finishing (fade-outs especially) don't produce
+        // mutations, so re-check open regions when they end.
+        scheduleWatchRecheck: function(ms) {
+            if (!this.isWatchActive || !this._watchOpen || !this._watchOpen.length) return;
+            clearTimeout(this._watchRecheckTimer);
+            this._watchRecheckTimer = setTimeout(() => {
+                this._watchRecheckTimer = null;
+                if (!this.isWatchActive) return;
+                const before = this._watchOpen.length;
+                this.checkWatchOpenRegions();
+                if (this._watchOpen.length !== before) this.queueWatchRender();
+            }, ms || 120);
+        },
+
+        runWatchSettle: function() {
+            const changesStarted = this._watchPendingSince || Date.now();
+            this._watchPendingSince = 0;
+            if (!this.isWatchActive) return;
+            // Attribute changes to the last activation only when they began
+            // shortly after it — a carousel rotating 3 s after an unrelated
+            // click isn't caused by that click.
+            const a0 = this._watchActivation;
+            const act = a0 && (changesStarted - a0.at) <= 2500 ? a0 : null;
+
+            // 1. Regions that closed.
+            this.checkWatchOpenRegions();
+
+            // 2. Regions that appeared.
+            const candidates = new Set();
+            (this._watchHidden || new Set()).forEach((el) => {
+                if (el.isConnected && !this.isWatchOwnNode(el) && this.watchIsShown(el)) candidates.add(el);
+            });
+            const added = this._watchPendingAdded || new Set();
+            added.forEach((el) => {
+                if (el.isConnected && !this.isWatchOwnNode(el) && this.watchIsShown(el)) candidates.add(el);
+            });
+            const pendingText = Array.from(this._watchPendingText || []);
+            this._watchPendingAdded = new Set();
+            this._watchPendingText = new Set();
+
+            const list = Array.from(candidates);
+            const tops = list.filter((el) => !list.some((o) => o !== el && o.contains(el)));
+            const regions = tops.filter((el) => {
+                if (!this.isWatchMeaningful(el)) return false;
+                // Changes inside something we're already tracking (next image
+                // in an open lightbox, nested panel) aren't new states.
+                return !(this._watchOpen || []).some((s) => s.region === el || s.region.contains(el));
+            });
+            regions.forEach((el) => this.createWatchState(el, act, added.has(el) ? 'added' : 'shown'));
+
+            // 3. Text that changed in response to the user.
+            this.evaluateWatchTextUpdates(pendingText, act, regions);
+
+            // 4. Focus dropped to <body> because the focused control vanished.
+            this.checkWatchFocusLost(act);
+
+            // 5. New baseline.
+            this._watchHidden = this.watchSnapshotHidden();
+            this._watchSnapAt = Date.now();
+            if (this._watchOpen.length) {
+                setTimeout(() => this.scheduleWatchRecheck(0), 900);
+            }
+            this.queueWatchRender();
+        },
+
+        // ── State creation & checks ──
+
+        setWatchCheck: function(s, key, status, text, sc, extra) {
+            const existing = s.checks.find((c) => c.key === key);
+            const entry = Object.assign({ key: key, status: status, text: text, sc: sc || '' }, extra || {});
+            if (existing) Object.assign(existing, entry);
+            else s.checks.push(entry);
+        },
+
+        findWatchDialogEl: function(region) {
+            const sel = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
+            if (region.matches(sel)) return region;
+            const inner = region.querySelector(sel);
+            return inner && this.watchIsShown(inner) ? inner : null;
+        },
+
+        // Overlay that behaves like a modal but may not be marked up as one.
+        isWatchOverlayLike: function(region) {
+            const cs = getComputedStyle(region);
+            const r = region.getBoundingClientRect();
+            const vw = window.innerWidth || 1;
+            const vh = window.innerHeight || 1;
+            const coverage = (Math.min(r.right, vw) - Math.max(r.left, 0)) * (Math.min(r.bottom, vh) - Math.max(r.top, 0)) / (vw * vh);
+            if (cs.position === 'fixed' && coverage >= 0.4) return true;
+            const cls = (typeof region.className === 'string' ? region.className : '') + ' ' + (region.id || '');
+            return /(^|[\s_-])(modal|lightbox|dialog|popup|overlay|fancybox|glightbox|mfp|pswp)/i.test(cls) && (cs.position === 'fixed' || cs.position === 'absolute');
+        },
+
+        isWatchSwitcherTrigger: function(trigger) {
+            if (!trigger) return false;
+            const name = (this.computeLinkAccessibleName(trigger) || '') + ' ' + (trigger.className && typeof trigger.className === 'string' ? trigger.className : '');
+            return /\b(next|prev|previous|slide|carousel|go to)\b|[›»‹«→←]/i.test(name);
+        },
+
+        // Is the region plausibly operated by this trigger? Either the
+        // trigger names it via aria-controls, or they sit close together in
+        // the DOM (accordion button + panel, menu button + list).
+        isWatchRelated: function(trigger, region) {
+            if (!trigger || !region) return false;
+            const ids = (trigger.getAttribute('aria-controls') || '').split(/\s+/).filter(Boolean);
+            if (ids.some((id) => {
+                const el = document.getElementById(id);
+                return el && (el === region || el.contains(region) || region.contains(el));
+            })) return true;
+            // Closest common ancestor must be within 3 levels of both, and
+            // not a page-level container.
+            let n = trigger;
+            for (let up = 0; up <= 3 && n && n !== document.body; up++) {
+                if (n.contains(region)) {
+                    if (/^(MAIN|BODY|HTML)$/.test(n.tagName)) return false;
+                    let depth = 0;
+                    for (let r = region; r && r !== n; r = r.parentElement) depth++;
+                    return depth <= 3;
+                }
+                n = n.parentElement;
+            }
+            return false;
+        },
+
+        classifyWatchRegion: function(region, act, source) {
+            const dialogEl = this.findWatchDialogEl(region);
+            if (dialogEl || this.isWatchOverlayLike(region)) return { kind: 'dialog', dialogEl: dialogEl };
+            if (!act || !act.trigger) return { kind: 'auto' };
+            const t = act.trigger;
+            if (region.contains(t)) return { kind: 'content' };
+            // Something far from the control the user just used became
+            // visible (a carousel rotating on its own, say) — not caused by it.
+            if (source === 'shown' && !this.isWatchRelated(t, region)) return { kind: 'auto' };
+            if (t && t.getAttribute('role') === 'tab') return { kind: 'tabs' };
+            if (t && this.isWatchSwitcherTrigger(t)) return { kind: 'slides' };
+            if (source === 'shown') return { kind: 'disclosure' };
+            if (t && (t.hasAttribute('aria-expanded') || t.hasAttribute('aria-controls') || t.tagName === 'SUMMARY')) return { kind: 'disclosure' };
+            return { kind: 'content' };
+        },
+
+        createWatchState: function(region, act, source) {
+            const cls = this.classifyWatchRegion(region, act, source);
+
+            if (cls.kind === 'auto') {
+                this.recordWatchAutoChange(region);
+                return;
+            }
+
+            // Re-opening the same region updates its existing card rather
+            // than stacking duplicates.
+            let s = (this.watchStates || []).find((x) => x.region === region && x.status !== 'open');
+            if (s) {
+                s.openCount++;
+                s.checks = [];
+                s.axe = { status: 'pending', violations: [], incomplete: 0 };
+                s.kind = cls.kind;
+                s.dialogEl = cls.dialogEl || null;
+                // Newest activity first.
+                this.watchStates = this.watchStates.filter((x) => x !== s);
+            } else {
+                s = { id: 'w' + (++this._watchSeq), region: region, openCount: 1, checks: [], axe: { status: 'pending', violations: [], incomplete: 0 } };
+                s.kind = cls.kind;
+                s.dialogEl = cls.dialogEl || null;
+            }
+            s.status = cls.kind === 'content' ? 'seen' : 'open';
+            s.openedAt = Date.now();
+            s.closedAt = null;
+            s.trigger = act ? act.trigger : null;
+            s.triggerLabel = act ? act.triggerLabel : '';
+            s.method = act ? act.method : null;
+            s.act = act;
+            s.tabCount = 0;
+            s.focusEscaped = false;
+            s.escPressedAt = 0;
+            s.escResult = null;
+            s.leaks = [];
+            s.updates = [];
+            const titleTrigger = (s.kind === 'disclosure' || s.kind === 'tabs') ? s.trigger : null;
+            s.title = this.getWatchRegionTitle(region, s.dialogEl, titleTrigger);
+            if (act && !act.stateId) act.stateId = s.id;
+
+            this.watchStates.unshift(s);
+            if (this.watchStates.length > 60) this.watchStates.length = 60;
+
+            if (s.kind === 'dialog') this.runWatchDialogChecks(s);
+            else if (s.kind === 'disclosure' || s.kind === 'tabs' || s.kind === 'slides') this.runWatchTriggerChecks(s);
+            else if (s.kind === 'content') this.runWatchContentChecks(s);
+
+            if (s.kind !== 'content') this._watchOpen.push(s);
+            this.queueWatchAxe(s);
+        },
+
+        runWatchDialogChecks: function(s) {
+            const d = s.dialogEl;
+            const region = s.region;
+            if (d) {
+                const role = d.tagName === 'DIALOG' ? 'dialog' : (d.getAttribute('role') || '');
+                if (role === 'dialog' || role === 'alertdialog') {
+                    this.setWatchCheck(s, 'role', 'pass', 'Identified as a ' + role + '.');
+                } else {
+                    this.setWatchCheck(s, 'role', 'fail', 'Has aria-modal but no dialog role. Add role="dialog".', '4.1.2 Name, Role, Value');
+                }
+                if (this.getWatchDialogName(d)) {
+                    this.setWatchCheck(s, 'name', 'pass', 'Has an accessible name: “' + this.getWatchDialogName(d).slice(0, 60) + '”.');
+                } else {
+                    this.setWatchCheck(s, 'name', 'fail', 'The dialog has no accessible name. Point aria-labelledby at its heading.', '4.1.2 Name, Role, Value');
+                }
+            } else {
+                this.setWatchCheck(s, 'role', 'fail', 'This overlay isn’t marked up as a dialog, so screen readers don’t know a dialog opened. Use <dialog> or role="dialog" with aria-modal="true".', '4.1.2 Name, Role, Value');
+            }
+
+            // Is it modal? Native showModal(), aria-modal, alertdialog, or a
+            // full-screen overlay are all expected to behave modally.
+            let isNativeModal = false;
+            try { isNativeModal = !!(d && d.matches(':modal')); } catch (_) { isNativeModal = false; }
+            const ariaModal = !!(d && d.getAttribute('aria-modal') === 'true');
+            s.modal = isNativeModal || ariaModal || (d && d.getAttribute('role') === 'alertdialog') || this.isWatchOverlayLike(region);
+
+            if (s.modal) {
+                if (isNativeModal || ariaModal || this.isWatchBackgroundHidden(region)) {
+                    this.setWatchCheck(s, 'background', 'pass', isNativeModal ? 'Opened with showModal(), so the page behind it is inert.' : 'Page behind the dialog is hidden from assistive technology.');
+                } else {
+                    this.setWatchCheck(s, 'background', 'warn', 'Screen reader users can still reach the page behind the dialog. Add aria-modal="true" or make the background inert.', 'ARIA APG — Dialog');
+                }
+            }
+
+            const closeBtn = Array.from(region.querySelectorAll('button, [role="button"], a[href], input[type="button"]')).find((b) => {
+                const n = (this.computeLinkAccessibleName(b) || '').trim();
+                return /close|dismiss|cancel|done|×|✕|✖|^x$/i.test(n);
+            });
+            if (closeBtn) this.setWatchCheck(s, 'close-btn', 'pass', 'Has a labelled close button: ' + this.describeWatchElement(closeBtn) + '.');
+            else this.setWatchCheck(s, 'close-btn', 'warn', 'No button labelled “Close” found. Give the close control a name such as aria-label="Close".', '4.1.2 Name, Role, Value');
+
+            this.setWatchCheck(s, 'focus-in', 'todo', 'Checking whether focus moved into the dialog…');
+            if (s.modal) this.setWatchCheck(s, 'focus-trap', 'todo', 'Press Tab several times. Focus should stay inside the dialog.');
+            this.setWatchCheck(s, 'escape', 'todo', 'Press Escape. It should close the dialog.');
+            this.setWatchCheck(s, 'focus-return', 'todo', 'Close the dialog. Focus should return to ' + (s.triggerLabel || 'the control that opened it') + '.');
+
+            setTimeout(() => {
+                if (s.status !== 'open') {
+                    if (s.checks.find((c) => c.key === 'focus-in' && c.status === 'todo')) {
+                        this.setWatchCheck(s, 'focus-in', 'info', 'Closed before focus could be checked.');
+                    }
+                    return;
+                }
+                const a = document.activeElement;
+                if (a && (s.region.contains(a) || (s.dialogEl && s.dialogEl.contains(a)))) {
+                    this.setWatchCheck(s, 'focus-in', 'pass', 'Focus moved into the dialog (' + this.describeWatchElement(a) + ').');
+                } else {
+                    this.setWatchCheck(s, 'focus-in', 'fail', 'Focus stayed behind the dialog on ' + this.describeWatchElement(a) + '. Move focus into the dialog when it opens.', '2.4.3 Focus Order');
+                }
+                this.queueWatchRender();
+            }, 500);
+        },
+
+        // All of the dialog's sibling branches up to <body> are inert or
+        // aria-hidden.
+        isWatchBackgroundHidden: function(region) {
+            let node = region;
+            const container = document.getElementById('uw-a11y-container');
+            while (node && node.parentElement && node !== document.body) {
+                const parent = node.parentElement;
+                const siblings = Array.from(parent.children).filter((c) => c !== node && c !== container &&
+                    !/^(SCRIPT|STYLE|LINK|META|TEMPLATE|NOSCRIPT)$/.test(c.tagName) && !this.isWatchOwnNode(c));
+                const allHidden = siblings.every((c) => c.inert || c.hasAttribute('inert') || c.getAttribute('aria-hidden') === 'true' || !this.watchIsShown(c));
+                if (!allHidden) return false;
+                node = parent;
+            }
+            return true;
+        },
+
+        runWatchTriggerChecks: function(s) {
+            if (s.kind === 'tabs') {
+                // With arrow keys the key lands on the *previous* tab, so use
+                // the tab that controls the panel now shown.
+                let tab = null;
+                try {
+                    if (s.region.id) tab = document.querySelector('[role="tab"][aria-controls~="' + CSS.escape(s.region.id) + '"]');
+                } catch (_) { tab = null; }
+                const a = document.activeElement;
+                if (!tab && a && a.getAttribute && a.getAttribute('role') === 'tab') tab = a;
+                if (tab && tab !== s.trigger) {
+                    s.trigger = tab;
+                    s.triggerLabel = this.describeWatchElement(tab);
+                    s.title = this.getWatchRegionTitle(s.region, null, tab);
+                }
+            }
+            const t = s.trigger;
+            if (!t) return;
+            const native = t.matches('button, summary, a[href], input[type="button"], input[type="submit"], input[type="checkbox"], input[type="radio"], select');
+            const role = (t.getAttribute('role') || '').toLowerCase();
+            const interactiveRoles = { button: 1, tab: 1, link: 1, menuitem: 1, menuitemcheckbox: 1, menuitemradio: 1, switch: 1, checkbox: 1, radio: 1, option: 1, treeitem: 1 };
+            const label = s.triggerLabel;
+
+            if (!native && !interactiveRoles[role]) {
+                this.setWatchCheck(s, 'trigger-role', 'fail', label + ' isn’t a button, so screen readers don’t announce it as a control. Use a <button>.', '4.1.2 Name, Role, Value');
+            } else if (t.tagName === 'A' && /^(#|javascript:)/i.test((t.getAttribute('href') || '#').trim()) && !role) {
+                this.setWatchCheck(s, 'trigger-role', 'warn', label + ' is a link used as a button. Use a <button> for controls that show or hide content.', 'Best practice');
+            } else {
+                this.setWatchCheck(s, 'trigger-role', 'pass', label + ' is exposed as a control.');
+            }
+
+            if (!native && t.tabIndex < 0) {
+                this.setWatchCheck(s, 'trigger-keyboard', 'fail', label + ' can’t be reached with the Tab key.', '2.1.1 Keyboard');
+            }
+
+            if (!(this.computeLinkAccessibleName(t) || '').trim() && !(t.matches('input') && t.value)) {
+                this.setWatchCheck(s, 'trigger-name', 'fail', 'The control that opened this has no accessible name.', '4.1.2 Name, Role, Value');
+            }
+
+            if (s.kind === 'disclosure') {
+                if (t.tagName === 'SUMMARY') {
+                    this.setWatchCheck(s, 'expanded', 'pass', 'Uses <details>/<summary>, which announces expanded state natively.');
+                } else {
+                    const exp = t.getAttribute('aria-expanded');
+                    if (exp === null) {
+                        this.setWatchCheck(s, 'expanded', 'fail', label + ' doesn’t tell screen readers whether its content is open. Add aria-expanded and toggle it.', '4.1.2 Name, Role, Value');
+                    } else if (exp !== 'true') {
+                        this.setWatchCheck(s, 'expanded', 'fail', 'aria-expanded is still "' + exp + '" after the content opened.', '4.1.2 Name, Role, Value');
+                    } else {
+                        this.setWatchCheck(s, 'expanded', 'pass', 'aria-expanded changed to "true".');
+                    }
+                }
+                const controls = (t.getAttribute('aria-controls') || '').split(/\s+/).filter(Boolean);
+                if (controls.length) {
+                    const targets = controls.map((id) => document.getElementById(id));
+                    if (targets.some((x) => !x)) {
+                        this.setWatchCheck(s, 'controls', 'warn', 'aria-controls points to an id that doesn’t exist.', '4.1.2 Name, Role, Value');
+                    } else if (!targets.some((x) => x === s.region || x.contains(s.region) || s.region.contains(x))) {
+                        this.setWatchCheck(s, 'controls', 'info', 'aria-controls points to a different element than the one that opened.');
+                    }
+                }
+                this.setWatchCheck(s, 'collapse', 'todo', 'Close it again to check aria-expanded resets and hidden content leaves the Tab order.');
+            } else if (s.kind === 'tabs') {
+                const sel = t.getAttribute('aria-selected');
+                if (sel === 'true') this.setWatchCheck(s, 'selected', 'pass', 'The active tab has aria-selected="true".');
+                else this.setWatchCheck(s, 'selected', 'fail', 'The tab that was activated doesn’t have aria-selected="true".', '4.1.2 Name, Role, Value');
+                const panelRole = s.region.getAttribute('role') === 'tabpanel' || !!s.region.querySelector('[role="tabpanel"]');
+                if (!panelRole) this.setWatchCheck(s, 'tabpanel', 'warn', 'The content shown isn’t marked role="tabpanel".', '1.3.1 Info and Relationships');
+            } else if (s.kind === 'slides') {
+                if (this.isWatchInLiveRegion(s.region)) this.setWatchCheck(s, 'announce', 'pass', 'The new slide is inside a live region and will be announced.');
+                else this.setWatchCheck(s, 'announce', 'info', 'The slide change isn’t announced. Consider aria-live="polite" on the slide container (while it isn’t auto-rotating) or labels such as “Slide 2 of 5”.', '4.1.3 Status Messages');
+            }
+
+            if (s.method === 'keyboard') this.setWatchCheck(s, 'keyboard', 'pass', 'Works with the keyboard (' + (s.act && s.act.key === ' ' ? 'Space' : (s.act && s.act.key) || 'key') + ').');
+            else if (s.method === 'pointer') this.setWatchCheck(s, 'keyboard', 'todo', 'Opened with the mouse. Also try Tab to it, then Enter and Space.');
+        },
+
+        runWatchContentChecks: function(s) {
+            const a = document.activeElement;
+            if (this.isWatchInLiveRegion(s.region)) {
+                this.setWatchCheck(s, 'announce', 'pass', 'New content is in a live region and will be announced.');
+            } else if (a && s.region.contains(a)) {
+                this.setWatchCheck(s, 'announce', 'pass', 'Focus moved to the new content.');
+            } else {
+                this.setWatchCheck(s, 'announce', 'warn', 'New content appeared but screen reader users won’t hear about it. Put status messages in a live region (role="status") or move focus to the content.', '4.1.3 Status Messages');
+            }
+        },
+
+        // Content that appears with no user action, grouped by its parent so
+        // a rotating carousel becomes one card that counts rotations.
+        recordWatchAutoChange: function(region) {
+            const key = region.parentElement || region;
+            let s = this._watchAutoGroups.get(key);
+            if (!s) {
+                s = { id: 'w' + (++this._watchSeq), kind: 'auto', region: key, status: 'seen', openCount: 0, checks: [], axe: { status: 'skipped', violations: [], incomplete: 0 } };
+                s.openedAt = Date.now();
+                s.title = this.getWatchRegionTitle(key, null);
+                s.leaks = [];
+                s.updates = [];
+                this._watchAutoGroups.set(key, s);
+                this.watchStates.unshift(s);
+                this.queueWatchAxe(s);
+            }
+            s.openCount++;
+            s.openedAt = Date.now();
+            if (s.openCount >= 2) {
+                this.setWatchCheck(s, 'auto', 'warn', 'This content has changed ' + s.openCount + ' times on its own. If it moves or updates for more than 5 seconds, users need a way to pause, stop or hide it.', '2.2.2 Pause, Stop, Hide');
+                let n = key;
+                let pause = null;
+                for (let i = 0; i < 4 && n && !pause; i++) {
+                    pause = Array.from(n.querySelectorAll('button, [role="button"], a[href]')).find((b) => /pause|stop/i.test(this.computeLinkAccessibleName(b) || ''));
+                    n = n.parentElement;
+                }
+                if (pause) this.setWatchCheck(s, 'pause', 'pass', 'Found a pause control: ' + this.describeWatchElement(pause) + '.');
+                else this.setWatchCheck(s, 'pause', 'warn', 'No pause or stop button found near this content.', '2.2.2 Pause, Stop, Hide');
+            } else {
+                this.setWatchCheck(s, 'auto', 'info', 'Content appeared without a related user action. Checking whether it keeps changing.');
+            }
+        },
+
+        evaluateWatchTextUpdates: function(changed, act, newRegions) {
+            if (!act || !changed.length) return;
+            const trigger = act.trigger;
+            const els = [];
+            changed.forEach((el) => {
+                if (!el || !el.isConnected || this.isWatchOwnNode(el)) return;
+                if (el.closest('script, style, title, textarea, select, option, input')) return;
+                if (newRegions.some((r) => r.contains(el))) return;
+                if (trigger && (trigger.contains(el) || el.contains(trigger))) return;
+                if (!this.watchIsShown(el) && !this.isWatchInLiveRegion(el)) return;
+                if (els.indexOf(el) === -1) els.push(el);
+            });
+            const tops = els.filter((el) => !els.some((o) => o !== el && o.contains(el)));
+            if (!tops.length) return;
+
+            let s = act.stateId ? this.watchStates.find((x) => x.id === act.stateId) : null;
+            if (!s) {
+                s = { id: 'w' + (++this._watchSeq), kind: 'update', region: tops[0], status: 'seen', openCount: 1, checks: [], axe: { status: 'skipped', violations: [], incomplete: 0 } };
+                s.openedAt = Date.now();
+                s.trigger = trigger;
+                s.triggerLabel = act.triggerLabel;
+                s.method = act.method;
+                s.title = 'Text changed';
+                s.leaks = [];
+                s.updates = [];
+                act.stateId = s.id;
+                this.watchStates.unshift(s);
+            }
+            const a = document.activeElement;
+            const quiet = tops.filter((el) => !this.isWatchInLiveRegion(el) && !(a && el.contains(a)));
+            s.updates = tops;
+            const snippet = (el) => {
+                let t = ((el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim());
+                if (t.length > 60) t = t.slice(0, 57) + '…';
+                return '“' + t + '”';
+            };
+            if (quiet.length) {
+                this.setWatchCheck(s, 'updates', 'warn',
+                    quiet.length + ' text update' + (quiet.length === 1 ? '' : 's') + ' won’t be announced: ' + quiet.slice(0, 3).map(snippet).join(', ') +
+                    '. If this is a status message (added to cart, saved, results count), put it in a role="status" live region.',
+                    '4.1.3 Status Messages');
+            } else {
+                this.setWatchCheck(s, 'updates', 'pass', 'Text updates are in a live region and will be announced: ' + tops.slice(0, 2).map(snippet).join(', ') + '.');
+            }
+        },
+
+        checkWatchFocusLost: function(act) {
+            if (!act || act.focusLostChecked || act.triggerHadFocus === false) return;
+            const t = act.trigger;
+            if (!t) return;
+            const a = document.activeElement;
+            const lost = !a || a === document.body || a === document.documentElement;
+            if (!lost || (t.isConnected && this.watchIsShown(t))) return;
+            act.focusLostChecked = true;
+            // A dialog closing is covered by its own focus-return check.
+            const coveredByDialog = this.watchStates.some((s) => s.kind === 'dialog' && s.closedAt && (Date.now() - s.closedAt < 3000) && s.region.contains(t));
+            if (coveredByDialog) return;
+            const s = { id: 'w' + (++this._watchSeq), kind: 'focus', region: t, status: 'seen', openCount: 1, checks: [], axe: { status: 'skipped', violations: [], incomplete: 0 } };
+            s.openedAt = Date.now();
+            s.trigger = t;
+            s.triggerLabel = act.triggerLabel;
+            s.method = act.method;
+            s.title = 'Focus lost';
+            s.leaks = [];
+            s.updates = [];
+            this.setWatchCheck(s, 'focus-lost', 'fail', act.triggerLabel + ' disappeared while it had focus, and focus fell back to the top of the page. Move focus somewhere sensible (the next item, a heading, or a confirmation message).', '2.4.3 Focus Order');
+            this.watchStates.unshift(s);
+        },
+
+        // ── Closing ──
+
+        checkWatchOpenRegions: function() {
+            if (!this._watchOpen) return;
+            const still = [];
+            this._watchOpen.forEach((s) => {
+                if (s.region.isConnected && this.watchIsShown(s.region)) still.push(s);
+                else this.closeWatchState(s);
+            });
+            this._watchOpen = still;
+        },
+
+        findWatchFocusLeaks: function(region) {
+            if (!region || !region.isConnected) return [];
+            const sel = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, iframe, [tabindex], [contenteditable=""], [contenteditable="true"]';
+            const cands = Array.from(region.querySelectorAll(sel));
+            if (region.matches(sel)) cands.unshift(region);
+            return cands.filter((el) => {
+                if (el.disabled) return false;
+                if (el.tabIndex < 0) return false;
+                if (el.closest('[inert]')) return false;
+                // Opacity and clipping don't stop focus; display:none and
+                // visibility:hidden do.
+                if (typeof el.checkVisibility === 'function') {
+                    return el.checkVisibility({ visibilityProperty: true, checkVisibilityCSS: true });
+                }
+                return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+            });
+        },
+
+        closeWatchState: function(s) {
+            s.status = 'closed';
+            s.closedAt = Date.now();
+
+            if (s.region.isConnected) {
+                const leaks = this.findWatchFocusLeaks(s.region);
+                s.leaks = leaks;
+                if (leaks.length) {
+                    const names = leaks.slice(0, 3).map((el) => this.describeWatchElement(el)).join(', ');
+                    this.setWatchCheck(s, 'collapse-focus', 'fail',
+                        leaks.length + ' hidden element' + (leaks.length === 1 ? ' is' : 's are') + ' still in the Tab order after closing (' + names + (leaks.length > 3 ? ', …' : '') + '). Keyboard users will tab into invisible content. Hide it with display:none, the hidden attribute, or inert.',
+                        '2.4.3 Focus Order');
+                } else {
+                    this.setWatchCheck(s, 'collapse-focus', 'pass', 'Hidden content left the Tab order when it closed.');
+                }
+            } else {
+                this.setWatchCheck(s, 'collapse-focus', 'pass', 'Removed from the page when it closed.');
+            }
+
+            if (s.kind === 'disclosure') {
+                const c = s.checks.find((x) => x.key === 'collapse');
+                if (c) s.checks.splice(s.checks.indexOf(c), 1);
+                const t = s.trigger;
+                if (t && t.isConnected && t.tagName !== 'SUMMARY') {
+                    const exp = t.getAttribute('aria-expanded');
+                    if (exp === 'true') this.setWatchCheck(s, 'expanded-close', 'fail', 'aria-expanded still says "true" after the content closed.', '4.1.2 Name, Role, Value');
+                    else if (exp === 'false') this.setWatchCheck(s, 'expanded-close', 'pass', 'aria-expanded returned to "false".');
+                }
+            }
+
+            if (s.kind === 'dialog') {
+                if (s.modal && !s.focusEscaped) {
+                    if (s.tabCount >= 2) this.setWatchCheck(s, 'focus-trap', 'pass', 'Focus stayed inside the dialog across ' + s.tabCount + ' Tab presses.');
+                    else this.setWatchCheck(s, 'focus-trap', 'info', 'Not tested. Next time, press Tab a few times while the dialog is open.');
+                }
+                // Credit Escape only if it was the last thing the user did.
+                const last = this._watchActivation;
+                const byEscape = s.escPressedAt && last && (last.key === 'Escape' || last.key === 'Esc') &&
+                    Math.abs(last.at - s.escPressedAt) < 100 && Date.now() - s.escPressedAt < 3000;
+                if (byEscape) {
+                    s.escResult = 'closed';
+                    this.setWatchCheck(s, 'escape', 'pass', 'Escape closes the dialog.');
+                } else if (!s.escResult) {
+                    this.setWatchCheck(s, 'escape', 'info', 'Not tested, because it was closed another way. Reopen it and press Escape.');
+                }
+                // Many scripts restore focus right after their close
+                // animation, so give them a moment.
+                setTimeout(() => {
+                    this.evaluateWatchFocusReturn(s);
+                    this.queueWatchRender();
+                }, 200);
+            }
+        },
+
+        evaluateWatchFocusReturn: function(s) {
+            const t = s.trigger;
+            const a = document.activeElement;
+            const container = document.getElementById('uw-a11y-container');
+            const mouseNoFocus = s.method === 'pointer' && s.act && s.act.triggerHadFocus === false;
+            if (!t) {
+                this.setWatchCheck(s, 'focus-return', 'info', 'Not checked: it opened on its own, so there’s no control to return focus to.');
+            } else if (a && (a === t || t.contains(a))) {
+                this.setWatchCheck(s, 'focus-return', 'pass', 'Focus returned to ' + s.triggerLabel + '.');
+            } else if (a && container && a === container) {
+                this.setWatchCheck(s, 'focus-return', 'info', 'Not checked: focus is in the Pinpoint panel.');
+            } else if (!a || a === document.body || a === document.documentElement) {
+                this.setWatchCheck(s, 'focus-return', mouseNoFocus ? 'warn' : 'fail',
+                    'Focus was lost: it went to the top of the page instead of back to ' + s.triggerLabel + '.' +
+                    (mouseNoFocus ? ' (Your browser didn’t focus the control on click. Retest with the keyboard to confirm.)' : ''),
+                    '2.4.3 Focus Order');
+            } else {
+                this.setWatchCheck(s, 'focus-return', 'warn', 'Focus moved to ' + this.describeWatchElement(a) + ' instead of back to ' + s.triggerLabel + '.', '2.4.3 Focus Order');
+            }
+        },
+
+        evaluateWatchEscape: function(s) {
+            if (!this.isWatchActive || s.escResult === 'closed') return;
+            this.checkWatchOpenRegions();
+            if (s.status === 'closed') return; // closeWatchState recorded the pass
+            if (s.status !== 'open') return;
+            s.escResult = 'stayed';
+            this.setWatchCheck(s, 'escape', 'warn', 'Pressing Escape didn’t close the dialog.', 'ARIA APG — Dialog');
+            this.queueWatchRender();
+        },
+
+        // ── Scoped axe scans ──
+
+        getWatchAxeConfig: function() {
+            const wcag = this.getSelectedWcag ? this.getSelectedWcag() : { wcagSpec: '2.1', wcagLevel: 'AA' };
+            const tags = this.buildWcagTags(wcag.wcagSpec, wcag.wcagLevel);
+            const isAAA = (wcag.wcagLevel || '').toUpperCase() === 'AAA';
+            return {
+                rules: {
+                    'region': { enabled: false },
+                    'color-contrast-enhanced': { enabled: isAAA },
+                    'empty-heading': { enabled: false },
+                    // Page-level rules don't apply to a fragment.
+                    'page-has-heading-one': { enabled: false },
+                    'landmark-one-main': { enabled: false },
+                    'bypass': { enabled: false },
+                    'document-title': { enabled: false },
+                    'html-has-lang': { enabled: false }
+                },
+                runOnly: { type: 'tag', values: tags }
+            };
+        },
+
+        // axe can only run one analysis at a time, so scans are chained.
+        queueWatchAxe: function(s) {
+            this._watchAxeQueue = (this._watchAxeQueue || Promise.resolve()).then(() => this.runWatchAxe(s, 0));
+        },
+
+        runWatchAxe: function(s, attempt) {
+            return new Promise((resolve) => {
+                const region = s.region;
+                if (!window.axe) {
+                    s.axe = { status: 'skipped', violations: [], incomplete: 0 };
+                    this.queueWatchRender();
+                    return resolve();
+                }
+                if (!region || !region.isConnected) {
+                    s.axe = { status: 'gone', violations: [], incomplete: 0 };
+                    this.queueWatchRender();
+                    return resolve();
+                }
+                const done = (err, res) => {
+                    if (err) {
+                        // Usually "Axe is already running" (a full rescan) — retry.
+                        if (attempt < 4) {
+                            setTimeout(() => this.runWatchAxe(s, attempt + 1).then(resolve), 600);
+                            return;
+                        }
+                        s.axe = { status: 'error', violations: [], incomplete: 0, error: err.message || String(err) };
+                        this.queueWatchRender();
+                        return resolve();
+                    }
+                    s.axe = {
+                        status: 'done',
+                        incomplete: (res.incomplete || []).length,
+                        violations: (res.violations || []).map((v) => ({
+                            id: v.id,
+                            impact: v.impact || 'minor',
+                            help: v.help,
+                            helpUrl: v.helpUrl,
+                            count: v.nodes.length,
+                            targets: v.nodes.slice(0, 5).map((n) => Array.isArray(n.target) ? n.target[n.target.length - 1] : String(n.target || ''))
+                        }))
+                    };
+                    this.syncWatchUi();
+                    this.queueWatchRender();
+                    resolve();
+                };
+                try {
+                    window.axe.run({ include: [region], exclude: this.getEssentialExcludeSelectors() }, this.getWatchAxeConfig(), done);
+                } catch (e) {
+                    done(e);
+                }
+            });
+        },
+
+        // ── Rendering ──
+
+        queueWatchRender: function() {
+            if (this._watchRenderTimer) return;
+            this._watchRenderTimer = setTimeout(() => {
+                this._watchRenderTimer = null;
+                this.renderWatchResults();
+            }, 60);
+        },
+
+        renderWatchResults: function() {
+            const root = this.shadowRoot;
+            const list = root && root.getElementById('uw-a11y-watch-list');
+            this.syncWatchUi();
+            if (!list) return;
+            const esc = (t) => this.escapeHtmlContent(String(t == null ? '' : t));
+            const attr = (t) => this.escapeHtmlAttribute(String(t == null ? '' : t));
+            const states = this.watchStates || [];
+            this.renderWatchCandidates();
+
+            if (!states.length) {
+                list.innerHTML = '<p class="uw-a11y-watch-empty">' + (this.isWatchActive
+                    ? 'Nothing captured yet. Open something on the page: an accordion, a menu, a tab or a lightbox.'
+                    : 'Nothing captured yet. Start the observer in step 1, then use the page.') + '</p>';
+                if (this.currentView === 'inspector' && this.inspectorSubView === 'interactions') this.syncInspectorContentHeight();
+                return;
+            }
+
+            const kindLabels = { dialog: 'Dialog', disclosure: 'Show / hide', tabs: 'Tabs', slides: 'Slides', content: 'New content', update: 'Text update', auto: 'Auto-changing', focus: 'Focus' };
+            const icons = { fail: '✕', warn: '!', todo: '○', info: 'i', pass: '✓' };
+            const srLabels = { fail: 'Fail', warn: 'Warning', todo: 'To test', info: 'Note', pass: 'Pass' };
+            const order = { fail: 0, warn: 1, todo: 2, info: 3, pass: 4 };
+            const statusLabels = { open: 'Open', closed: 'Closed', seen: '', stopped: 'Not tracked' };
+            const methodLabels = { keyboard: 'with the keyboard', pointer: 'with the mouse', assistive: 'by assistive technology or a script' };
+            const counts = this.getWatchCounts();
+
+            let html = '<p class="uw-a11y-watch-summary">' + esc(counts.states + (counts.states === 1 ? ' state' : ' states') + ' captured · ' +
+                counts.fail + (counts.fail === 1 ? ' failure' : ' failures') + ' · ' + counts.warn + (counts.warn === 1 ? ' warning' : ' warnings')) + '</p>';
+
+            states.forEach((s) => {
+                const checks = s.checks.slice().sort((a, b) => order[a.status] - order[b.status]);
+                const axeFails = s.axe && s.axe.violations ? s.axe.violations.length : 0;
+                const worst = checks.some((c) => c.status === 'fail') || axeFails ? 'fail'
+                    : checks.some((c) => c.status === 'warn') ? 'warn'
+                    : checks.some((c) => c.status === 'todo') ? 'todo' : 'pass';
+                const time = new Date(s.openedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const meta = [statusLabels[s.status] || '', s.openCount > 1 ? (s.kind === 'auto' ? 'seen ' : 'opened ') + s.openCount + ' times' : '', time].filter(Boolean).join(' · ');
+
+                html += '<article class="uw-a11y-watch-state" data-worst="' + worst + '">';
+                html += '<div class="uw-a11y-watch-state-head">';
+                html += '<span class="uw-a11y-watch-kind" data-kind="' + attr(s.kind) + '">' + esc(kindLabels[s.kind] || s.kind) + '</span>';
+                html += '<h4 class="uw-a11y-watch-title">' + esc(s.title) + '</h4>';
+                html += '<span class="uw-a11y-watch-meta">' + esc(meta) + '</span>';
+                html += '</div>';
+                if (s.triggerLabel && s.kind !== 'focus') {
+                    html += '<p class="uw-a11y-watch-trigger">Triggered by ' + esc(s.triggerLabel) + (s.method && methodLabels[s.method] ? ' ' + esc(methodLabels[s.method]) : '') + '</p>';
+                }
+
+                if (checks.length) {
+                    html += '<ul class="uw-a11y-watch-checks">';
+                    checks.forEach((c) => {
+                        html += '<li class="is-' + attr(c.status) + '"><span class="uw-a11y-watch-icon" aria-hidden="true">' + icons[c.status] + '</span>' +
+                            '<span class="uw-a11y-watch-check-text"><span class="sr-only">' + srLabels[c.status] + ': </span>' + esc(c.text) +
+                            (c.sc ? ' <span class="uw-a11y-watch-sc">' + esc(c.sc) + '</span>' : '') + '</span></li>';
+                    });
+                    html += '</ul>';
+                }
+
+                if (s.axe && s.axe.status !== 'skipped') {
+                    html += '<div class="uw-a11y-watch-axe">';
+                    if (s.axe.status === 'pending') {
+                        html += '<p class="uw-a11y-watch-axe-note">Scanning this state…</p>';
+                    } else if (s.axe.status === 'gone') {
+                        html += '<p class="uw-a11y-watch-axe-note">It closed before it could be scanned. Open it again and leave it open for a moment.</p>';
+                    } else if (s.axe.status === 'error') {
+                        html += '<p class="uw-a11y-watch-axe-note">The scan of this state failed: ' + esc(s.axe.error) + '</p>';
+                    } else if (!axeFails) {
+                        html += '<p class="uw-a11y-watch-axe-note">Automated scan of this state: no issues' + (s.axe.incomplete ? ' (' + s.axe.incomplete + ' need manual review)' : '') + '.</p>';
+                    } else {
+                        html += '<p class="uw-a11y-watch-axe-note">Automated scan of this state: ' + axeFails + (axeFails === 1 ? ' issue' : ' issues') + '</p><ul class="uw-a11y-watch-axe-list">';
+                        s.axe.violations.forEach((v) => {
+                            const href = this.escapeUrl(v.helpUrl);
+                            html += '<li><span class="uw-a11y-watch-impact" data-impact="' + attr(v.impact) + '">' + esc(v.impact) + '</span> ' +
+                                '<span>' + esc(v.help) + (v.count > 1 ? ' (' + v.count + ')' : '') + '</span>' +
+                                (v.targets[0] ? ' <button type="button" class="uw-a11y-watch-link" data-watch-action="target" data-watch-id="' + attr(s.id) + '" data-watch-target="' + attr(v.targets[0]) + '">Show</button>' : '') +
+                                (href ? ' <a class="uw-a11y-watch-link" href="' + href + '" target="_blank" rel="noopener noreferrer">Rule details<span class="sr-only"> (opens in new tab)</span></a>' : '') +
+                                '</li>';
+                        });
+                        html += '</ul>';
+                    }
+                    html += '</div>';
+                }
+
+                const actions = [];
+                if (s.region && s.region.isConnected && this.watchIsShown(s.region)) {
+                    actions.push('<button type="button" class="uw-a11y-btn uw-a11y-btn-secondary uw-a11y-watch-action" data-watch-action="region" data-watch-id="' + attr(s.id) + '">Show on page</button>');
+                }
+                if (s.trigger && s.trigger.isConnected && this.watchIsShown(s.trigger) && s.kind !== 'focus') {
+                    actions.push('<button type="button" class="uw-a11y-btn uw-a11y-btn-secondary uw-a11y-watch-action" data-watch-action="trigger" data-watch-id="' + attr(s.id) + '">Show trigger</button>');
+                }
+                if (actions.length) html += '<div class="uw-a11y-watch-actions">' + actions.join('') + '</div>';
+                html += '</article>';
+            });
+
+            list.innerHTML = html;
+            if (this.currentView === 'inspector' && this.inspectorSubView === 'interactions') this.syncInspectorContentHeight();
+        },
+
+        handleWatchAction: function(action, id, target) {
+            const s = (this.watchStates || []).find((x) => x.id === id);
+            if (!s) return;
+            let el = null;
+            if (action === 'region') el = s.region;
+            else if (action === 'trigger') el = s.trigger;
+            else if (action === 'target' && target) {
+                try { el = (s.region && s.region.isConnected && s.region.querySelector(target)) || document.querySelector(target); } catch (_) { el = null; }
+            }
+            if (!el || !el.isConnected) {
+                this.setWatchStatus('That element is no longer on the page.');
+                return;
+            }
+            this.watchFlash(el);
+        },
+
+        // Flash an element without the watcher mistaking our outline for a
+        // page change.
+        watchFlash: function(el) {
+            this._watchFlashEl = el;
+            this._watchFlashUntil = Date.now() + 2500;
+            this.scrollAndFlashTarget(el);
+        },
+
+        // ── Interaction watch: finding widgets worth testing ──
+        // Cheap selector-based sweep for things a static scan only sees
+        // closed: accordions, dialog/lightbox triggers, tabs, menus,
+        // carousels, and clickable divs that probably don't work with a
+        // keyboard. Feeds the results-view hint and the "Found on this page"
+        // checklist in the watch panel.
+        detectWatchCandidates: function() {
+            const groups = [
+                { key: 'dialog', short: 'dialogs', one: 'dialog or lightbox', many: 'dialogs or lightboxes', title: 'Dialogs and lightboxes', items: [], unlocated: 0 },
+                { key: 'tabs', short: 'tabs', one: 'set of tabs', many: 'sets of tabs', title: 'Tabs', items: [], unlocated: 0 },
+                { key: 'carousel', short: 'carousels', one: 'carousel', many: 'carousels', title: 'Carousels and sliders', items: [], unlocated: 0 },
+                { key: 'menu', short: 'menus', one: 'menu', many: 'menus', title: 'Menus and pop-ups', items: [], unlocated: 0 },
+                { key: 'disclosure', short: 'accordions', one: 'accordion or show/hide button', many: 'accordions or show/hide buttons', title: 'Accordions and show/hide buttons', items: [], unlocated: 0 },
+                { key: 'custom', short: 'custom controls', one: 'clickable element that may not work with a keyboard', many: 'clickable elements that may not work with a keyboard', title: 'Custom clickable elements', items: [], unlocated: 0 }
+            ];
+            const byKey = {};
+            groups.forEach((g) => { byKey[g.key] = g; });
+            if (!document.body) return [];
+
+            const MAX = 60;
+            let exclude = '';
+            let include = '';
+            try { exclude = this.getEffectiveExcludeSelectors().join(', '); } catch (_) { exclude = ''; }
+            try { include = this.getEffectiveIncludeSelectors().join(', '); } catch (_) { include = ''; }
+            const closestSafe = (el, sel) => {
+                if (!sel) return null;
+                try { return el.closest(sel); } catch (_) { return null; }
+            };
+            const q = (sel) => {
+                try { return Array.from(document.body.querySelectorAll(sel)); } catch (_) { return []; }
+            };
+            const inScope = (el) => {
+                if (!el || el.nodeType !== 1 || this.isWatchOwnNode(el)) return false;
+                if (exclude && closestSafe(el, exclude)) return false;
+                if (include && !closestSafe(el, include)) return false;
+                return true;
+            };
+            const claimed = new Set();
+            const containers = [];
+            const add = (key, el, isContainer) => {
+                const g = byKey[key];
+                if (g.items.length >= MAX || claimed.has(el) || !inScope(el)) return false;
+                if (containers.some((c) => c.contains(el))) return false;
+                if (!this.watchIsShown(el)) return false;
+                claimed.add(el);
+                g.items.push(el);
+                if (isContainer) containers.push(el);
+                return true;
+            };
+            const idsOf = (el) => (el.getAttribute('aria-controls') || '').split(/\s+/).filter(Boolean);
+
+            // Containers first, so the buttons inside them aren't counted again.
+            q('[role="tablist"]').forEach((el) => add('tabs', el, true));
+            q('[aria-roledescription="carousel" i], .swiper, .swiper-container, .slick-slider, .splide, .flickity-enabled, .glide, .owl-carousel, .carousel, .keen-slider, .embla')
+                .forEach((el) => add('carousel', el, true));
+
+            // Dialog and lightbox triggers.
+            const dialogIds = new Set();
+            q('[aria-controls]').forEach((el) => {
+                const hit = idsOf(el).find((id) => {
+                    const t = document.getElementById(id);
+                    return t && t.matches('dialog, [role="dialog"], [role="alertdialog"]');
+                });
+                if (hit && add('dialog', el)) dialogIds.add(hit);
+            });
+            q('[aria-haspopup="dialog"], [data-bs-toggle="modal"], [data-toggle="modal"], [data-fancybox], [data-lightbox], [data-lity], [data-featherlight], [data-pswp-src], [data-micromodal-trigger], [data-a11y-dialog-show], [data-modal-target], .glightbox')
+                .forEach((el) => add('dialog', el));
+            const imageHref = /\.(jpe?g|png|gif|webp|avif)([?#].*)?$/i;
+            q('a[href]').forEach((a) => {
+                if (a.querySelector('img') && imageHref.test(a.getAttribute('href') || '')) add('dialog', a);
+            });
+            // Controls whose label says they enlarge something.
+            const zoomLabel = /\b(enlarge|zoom|lightbox|view larger|full ?screen|expand (image|photo|picture))\b/i;
+            q('button, a[href], [role="button"]').forEach((el) => {
+                const label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent || '').trim();
+                if (label && label.length < 80 && zoomLabel.test(label)) add('dialog', el);
+            });
+            // In-page links to something hidden: overlays, off-canvas panels,
+            // collapsed sections.
+            q('a[href^="#"]').forEach((a) => {
+                const id = (a.getAttribute('href') || '').slice(1);
+                if (!id) return;
+                let t = null;
+                try { t = document.getElementById(decodeURIComponent(id)); } catch (_) { t = null; }
+                if (!t || t === document.body || t.contains(a) || this.watchIsShown(t)) return;
+                const pos = getComputedStyle(t).position;
+                const overlay = t.matches('dialog, [role="dialog"], [role="alertdialog"]') || pos === 'fixed';
+                if (overlay && add('dialog', a) && t.id) dialogIds.add(t.id);
+                else if (!overlay) add('disclosure', a);
+            });
+
+            // Closed dialogs already in the DOM: try to find the button that
+            // shares their name, otherwise just count them.
+            let buttons = null;
+            q('dialog, [role="dialog"], [role="alertdialog"]').forEach((d) => {
+                if (!inScope(d) || this.watchIsShown(d) || (d.id && dialogIds.has(d.id))) return;
+                const name = this.getWatchDialogName(d).replace(/\s+/g, ' ').trim().toLowerCase();
+                let trig = null;
+                if (name) {
+                    buttons = buttons || q('button, a[href], [role="button"]');
+                    trig = buttons.find((b) => !d.contains(b) && !claimed.has(b) &&
+                        ((b.getAttribute('aria-label') || b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() === name));
+                }
+                if (!(trig && add('dialog', trig))) byKey.dialog.unlocated++;
+            });
+
+            q('[aria-haspopup]:not([aria-haspopup="false"]):not([aria-haspopup="dialog"])')
+                .forEach((el) => add('menu', el));
+            // Menu toggles that only say so in their label ("☰", "Menu").
+            const menuLabel = /^[^\p{L}\p{N}]*(☰|≡|(open |main |site |toggle )?(menu|navigation)\b)/iu;
+            q('button, a[href], [role="button"]').forEach((el) => {
+                const label = (el.getAttribute('aria-label') || el.textContent || '').trim();
+                if (label && label.length < 40 && menuLabel.test(label)) add('menu', el);
+            });
+
+            q('details > summary, [aria-expanded], [data-bs-toggle="collapse"], [data-toggle="collapse"]').forEach((el) => {
+                if (el.matches('input, select, textarea, [role="combobox"], [role="tab"], [role="option"]')) return;
+                add('disclosure', el);
+            });
+
+            // Clickable non-controls: inline onclick, or a widget-ish class/id
+            // with a pointer cursor, that isn't a real control and doesn't
+            // wrap one.
+            const native = 'a[href], button, input, select, textarea, summary, label, [tabindex], [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="option"], [role="checkbox"], [role="switch"], [role="radio"]';
+            q('[onclick], [class*="accordion" i], [class*="toggle" i], [class*="collapse" i], [class*="expand" i], [class*="dropdown" i], [class*="trigger" i], [class*="lightbox" i], [class*="modal-open" i], [id*="dropdown" i], [id*="toggle" i], [id*="accordion" i], [data-panel], [data-tab], [data-target], [data-bs-target], [data-toggle], [data-bs-toggle]')
+                .slice(0, 3000)
+                .forEach((el) => {
+                    if (el === document.body || el.matches(native) || el.closest('a[href], button')) return;
+                    if (el.querySelector(native)) return;
+                    if (!(el.textContent || '').trim() && !el.querySelector('img, svg')) return;
+                    if (!el.hasAttribute('onclick') && getComputedStyle(el).cursor !== 'pointer') return;
+                    // Skip children of something already counted as custom.
+                    if (byKey.custom.items.some((c) => c.contains(el))) return;
+                    add('custom', el);
+                });
+
+            return groups.filter((g) => g.items.length || g.unlocated);
+        },
+
+        refreshWatchCandidates: function() {
+            try {
+                this.watchCandidates = this.detectWatchCandidates();
+            } catch (e) {
+                console.warn('[Pinpoint] widget detection failed:', e && e.message);
+                this.watchCandidates = [];
+            }
+            this._watchTried = this._watchTried || new WeakSet();
+            this._watchCandidateCursor = {};
+            return this.watchCandidates;
+        },
+
+        // "Found 8 interactive elements: dialogs, tabs and accordions."
+        describeWatchCandidates: function(groups) {
+            groups = groups || [];
+            const total = groups.reduce((t, g) => t + g.items.length + g.unlocated, 0);
+            const kinds = groups.map((g) => g.short);
+            const list = kinds.length <= 1 ? kinds.join('') : kinds.slice(0, -1).join(', ') + ' and ' + kinds[kinds.length - 1];
+            return 'Found ' + total + ' interactive ' + (total === 1 ? 'element' : 'elements') + ': ' + list + '.';
+        },
+
+        getInteractionHintDismissalsKey: function() { return 'uw-a11y-interaction-hint-dismissals'; },
+
+        isInteractionHintDismissed: function() {
+            const host = this.getCurrentHostname();
+            if (!host) return false;
+            try {
+                const map = JSON.parse(localStorage.getItem(this.getInteractionHintDismissalsKey()) || '{}');
+                return !!(map && map[host]);
+            } catch (_) { return false; }
+        },
+
+        markInteractionHintDismissed: function() {
+            const host = this.getCurrentHostname();
+            if (!host) return;
+            try {
+                const map = JSON.parse(localStorage.getItem(this.getInteractionHintDismissalsKey()) || '{}') || {};
+                map[host] = Date.now();
+                localStorage.setItem(this.getInteractionHintDismissalsKey(), JSON.stringify(map));
+            } catch (_) {}
+        },
+
+        // Results-view nudge toward Interaction watch. Returns the sentence
+        // to show, or null when there's nothing to suggest.
+        getInteractionHintText: function() {
+            const groups = this.refreshWatchCandidates();
+            if (this.isWatchActive || (this.watchStates && this.watchStates.length)) return null;
+            if (!groups.length || this.isInteractionHintDismissed()) return null;
+            return this.describeWatchCandidates(groups);
+        },
+
+        bindInteractionHint: function() {
+            const hint = this.shadowRoot && this.shadowRoot.getElementById('uw-a11y-interact-hint');
+            if (!hint) return;
+            const go = hint.querySelector('.uw-a11y-interact-hint-go');
+            const dismiss = hint.querySelector('.uw-a11y-interact-hint-dismiss');
+            if (go) go.addEventListener('click', () => {
+                this.playSound('ui');
+                hint.remove();
+                this.openWatchPanel();
+                this.startWatchMode();
+            });
+            if (dismiss) dismiss.addEventListener('click', () => {
+                this.markInteractionHintDismissed();
+                this.playSound('ui');
+                hint.remove();
+            });
+        },
+
+        // Called with each activation's trigger: ticks off the widget it
+        // belongs to in the "Found on this page" list.
+        markWatchCandidateTried: function(el) {
+            if (!el || !this.watchCandidates || !this.watchCandidates.length) return;
+            this._watchTried = this._watchTried || new WeakSet();
+            let changed = false;
+            this.watchCandidates.forEach((g) => {
+                g.items.forEach((item) => {
+                    if (!this._watchTried.has(item) && (item === el || item.contains(el))) {
+                        this._watchTried.add(item);
+                        changed = true;
+                    }
+                });
+            });
+            if (changed) this.renderWatchCandidates();
+        },
+
+        renderWatchCandidates: function() {
+            const root = this.shadowRoot;
+            const box = root && root.getElementById('uw-a11y-watch-candidates');
+            if (!box) return;
+            const groups = this.watchCandidates || [];
+            if (!groups.length) {
+                box.setAttribute('hidden', '');
+                box.innerHTML = '';
+                return;
+            }
+            const esc = (t) => this.escapeHtmlContent(String(t == null ? '' : t));
+            const attr = (t) => this.escapeHtmlAttribute(String(t == null ? '' : t));
+            const tried = this._watchTried || new WeakSet();
+            let html = '<div class="uw-a11y-watch-candidates-head"><h5>Found on this page</h5>' +
+                '<button type="button" class="uw-a11y-watch-link" data-cand-action="refresh">Look again</button></div>' +
+                '<p class="uw-a11y-watch-candidates-intro"><strong>Show next</strong> scrolls to one you haven’t tried yet.</p><ul>';
+            let unlocated = 0;
+            groups.forEach((g) => {
+                unlocated += g.unlocated;
+                if (!g.items.length) return;
+                const done = g.items.filter((el) => tried.has(el)).length;
+                const all = done === g.items.length;
+                html += '<li' + (all ? ' class="is-done"' : '') + '>' +
+                    '<span class="uw-a11y-watch-cand-icon" aria-hidden="true">' + (all ? '✓' : '○') + '</span>' +
+                    '<span class="uw-a11y-watch-cand-name">' + esc(g.title) + '</span>' +
+                    '<span class="uw-a11y-watch-cand-count">' + esc(done + ' of ' + g.items.length + ' tried') + '</span>' +
+                    '<button type="button" class="uw-a11y-watch-link" data-cand-action="next" data-cand-key="' + attr(g.key) + '">Show next<span class="sr-only"> ' + esc(g.one) + '</span></button>' +
+                    '</li>';
+            });
+            html += '</ul>';
+            if (unlocated) {
+                html += '<p class="uw-a11y-watch-candidates-intro">' + esc(unlocated === 1
+                    ? 'There is also 1 closed dialog on the page, and Pinpoint couldn’t tell which button opens it. Find it and open it while the observer is on.'
+                    : 'There are also ' + unlocated + ' closed dialogs on the page, and Pinpoint couldn’t tell which buttons open them. Find them and open them while the observer is on.') + '</p>';
+            }
+            box.innerHTML = html;
+            box.removeAttribute('hidden');
+        },
+
+        handleWatchCandidateAction: function(action, key) {
+            if (action === 'refresh') {
+                this.refreshWatchCandidates();
+                this.renderWatchCandidates();
+                if (this.currentView === 'inspector' && this.inspectorSubView === 'interactions') this.syncInspectorContentHeight();
+                const n = (this.watchCandidates || []).reduce((t, g) => t + g.items.length + g.unlocated, 0);
+                this.setWatchStatus(n ? 'Found ' + n + (n === 1 ? ' element' : ' elements') + ' to try.' : 'Nothing found. You can still open things on the page while the observer is on.');
+                return;
+            }
+            if (action !== 'next') return;
+            const g = (this.watchCandidates || []).find((x) => x.key === key);
+            if (!g) return;
+            const live = g.items.filter((el) => el.isConnected && this.watchIsShown(el));
+            if (!live.length) {
+                this.setWatchStatus('Those elements aren’t visible any more. Select Look again.');
+                return;
+            }
+            const tried = this._watchTried || new WeakSet();
+            const untried = live.filter((el) => !tried.has(el));
+            const pool = untried.length ? untried : live;
+            this._watchCandidateCursor = this._watchCandidateCursor || {};
+            const i = (this._watchCandidateCursor[key] || 0) % pool.length;
+            this._watchCandidateCursor[key] = i + 1;
+            const el = pool[i];
+            this.watchFlash(el);
+            this.setWatchStatus((untried.length ? 'Not tried yet' : 'All tried. Showing again') + ' (' + (i + 1) + ' of ' + pool.length + '): ' + this.describeWatchElement(el) + '.');
         },
 
         // ── Contrast checker ─────────────────────────────────────────────
@@ -14667,6 +16862,21 @@
                     `;
                 })()}
 
+                ${(() => {
+                    const found = this.getInteractionHintText();
+                    if (!found) return '';
+                    return `
+                        <div id="uw-a11y-interact-hint" role="status" class="uw-a11y-interact-hint">
+                            <svg class="uw-a11y-interact-hint-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
+                            <span class="uw-a11y-interact-hint-text"><strong>${this.escapeHtmlContent(found)}</strong> This scan only checked their starting state. Use the Interaction observer to test them as you open and close them.</span>
+                            <button type="button" class="uw-a11y-interact-hint-dismiss" aria-label="Dismiss interaction testing suggestion" title="Don't show this again on this site">✕</button>
+                            <div class="uw-a11y-interact-hint-actions">
+                                <button type="button" class="uw-a11y-interact-hint-go">Test interactions</button>
+                            </div>
+                        </div>
+                    `;
+                })()}
+
                 ${(this.getEffectiveIncludeSelectors().length > 0 || this.getActivePresetEntryForCurrentHost()) ? `
                 <div role="status" style="background:rgba(79,70,229,0.07);border:1px solid rgba(79,70,229,0.25);border-radius:8px;padding:8px 12px;font-size:12px;color:#4f46e5;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -14767,6 +16977,8 @@
                     presetHint.remove();
                 });
             }
+
+            this.bindInteractionHint();
 
             // Add event listener for score info icon
             const scoreInfo = this.shadowRoot.querySelector('.uw-a11y-score-info');
@@ -15793,6 +18005,9 @@
 
 
         remove: function() {
+            // Stop the interaction watcher (observer + document listeners)
+            if (typeof this.stopWatchMode === 'function') this.stopWatchMode();
+
             // Clean up element picker if active
             this.stopPickerMode();
 
